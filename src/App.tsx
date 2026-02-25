@@ -22,7 +22,12 @@ import {
   User,
   Bot,
   Volume2,
-  VolumeX
+  VolumeX,
+  FilePlus,
+  Trash2,
+  Edit3,
+  Folder,
+  FileCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
@@ -42,14 +47,44 @@ const LANGUAGES = [
   { id: 'javascript', name: 'JavaScript' },
   { id: 'typescript', name: 'TypeScript' },
   { id: 'python', name: 'Python' },
-  { id: 'html', name: 'HTML/CSS' },
+  { id: 'html', name: 'HTML' },
+  { id: 'css', name: 'CSS' },
   { id: 'cpp', name: 'C++' },
   { id: 'java', name: 'Java' },
+  { id: 'c', name: 'C' },
+  { id: 'csharp', name: 'C#' },
+  { id: 'go', name: 'Go' },
+  { id: 'rust', name: 'Rust' },
+  { id: 'php', name: 'PHP' },
+  { id: 'ruby', name: 'Ruby' },
+  { id: 'swift', name: 'Swift' },
+  { id: 'kotlin', name: 'Kotlin' },
+  { id: 'sql', name: 'SQL' },
+  { id: 'r', name: 'R' },
+  { id: 'shell', name: 'Shell' },
+  { id: 'markdown', name: 'Markdown' },
+  { id: 'yaml', name: 'YAML' },
+  { id: 'json', name: 'JSON' },
+  { id: 'xml', name: 'XML' },
+  { id: 'scss', name: 'SCSS' },
+  { id: 'less', name: 'Less' },
 ];
 
+interface FileState {
+  id: number;
+  name: string;
+  code: string;
+  language: string;
+}
+
 export default function App() {
-  const [code, setCode] = useState('// Start coding or use AI to generate...\nconsole.log("Welcome to Nexus Forge");');
-  const [language, setLanguage] = useState('javascript');
+  const [files, setFiles] = useState<FileState[]>([
+    { id: 1, name: 'index.html', code: '<div class="container">\n  <h1>Nexus Forge</h1>\n  <p>Multi-language combination preview</p>\n  <button id="btn">Click Me</button>\n</div>', language: 'html' },
+    { id: 2, name: 'styles.css', code: '.container {\n  padding: 2rem;\n  font-family: sans-serif;\n  text-align: center;\n  background: #f0f9ff;\n  border-radius: 1rem;\n}\nh1 { color: #0ea5e9; }', language: 'css' },
+    { id: 3, name: 'script.js', code: 'document.getElementById("btn").onclick = () => {\n  alert("Hello from Nexus Forge!");\n};', language: 'javascript' },
+    { id: 4, name: 'extra.js', code: 'console.log("Secondary script loaded");', language: 'javascript' },
+  ]);
+  const [activeFileId, setActiveFileId] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDebugging, setIsDebugging] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
@@ -133,11 +168,8 @@ export default function App() {
       
       if (command.intent === 'build') {
         const generated = await generateCode(command.description, command.suggestedLanguage, useThinking);
-        setCode(generated);
-        setLanguage(command.suggestedLanguage);
-        if (command.suggestedLanguage === 'html') {
-          setPreviewContent(generated);
-        }
+        // For multi-file, we'll just update the active file for now
+        updateFile(activeFileId, { code: generated, language: command.suggestedLanguage });
       }
     } catch (error) {
       console.error(error);
@@ -162,12 +194,10 @@ export default function App() {
     setIsGenerating(true);
     setActiveTab('ai');
     try {
-      const generated = await generateCode(prompt, language, useThinking);
-      setCode(generated);
+      const generated = await generateCode(prompt, activeFile.language, useThinking);
+      updateFile(activeFileId, { code: generated });
       setAiResponse(`Successfully generated code for: ${prompt}`);
-      if (language === 'html') {
-        setPreviewContent(generated);
-      }
+      handleRun();
       confetti({
         particleCount: 50,
         spread: 60,
@@ -183,8 +213,8 @@ export default function App() {
     setIsGenerating(true);
     setActiveTab('ai');
     try {
-      const fixed = await fastFix(code, language, customApiKey);
-      setCode(fixed);
+      const fixed = await fastFix(activeFile.code, activeFile.language, customApiKey);
+      updateFile(activeFileId, { code: fixed });
       setAiResponse('Applied a fast fix using Gemini Flash-Lite.');
     } catch (error) {
       setAiResponse('Error applying fast fix.');
@@ -197,7 +227,7 @@ export default function App() {
     setIsDebugging(true);
     setActiveTab('ai');
     try {
-      const debugResult = await debugCode(code, language);
+      const debugResult = await debugCode(activeFile.code, activeFile.language);
       setAiResponse(debugResult);
     } catch (error) {
       setAiResponse('Error debugging code.');
@@ -319,7 +349,7 @@ export default function App() {
     setAiResponse(`AI is performing: ${action}...`);
 
     try {
-      const result = await manipulateCode(selectedText, language, action);
+      const result = await manipulateCode(selectedText, activeFile.language, action);
       editor.executeEdits('ai-manipulation', [
         {
           range: selection,
@@ -339,17 +369,62 @@ export default function App() {
     }
   };
 
-  const handleRun = () => {
-    if (language === 'html' || code.includes('<!DOCTYPE html>') || code.includes('<html')) {
-      setPreviewContent(code);
-      confetti({
-        particleCount: 40,
-        spread: 70,
-        origin: { y: 0.8 }
-      });
-    } else {
-      alert('Execution for non-web languages coming soon! For now, only HTML/CSS/JS previews are supported.');
+  const [isExplorerOpen, setIsExplorerOpen] = useState(true);
+
+  const activeFile = files.find(f => f.id === activeFileId) || files[0];
+
+  const createFile = () => {
+    const newId = Math.max(...files.map(f => f.id), 0) + 1;
+    const newFile: FileState = {
+      id: newId,
+      name: `file_${newId}.js`,
+      code: '// New file',
+      language: 'javascript'
+    };
+    setFiles([...files, newFile]);
+    setActiveFileId(newId);
+  };
+
+  const deleteFile = (id: number) => {
+    if (files.length <= 1) return;
+    const newFiles = files.filter(f => f.id !== id);
+    setFiles(newFiles);
+    if (activeFileId === id) {
+      setActiveFileId(newFiles[0].id);
     }
+  };
+
+  const renameFile = (id: number, newName: string) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+  };
+
+  const updateFile = (id: number, updates: Partial<FileState>) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  };
+
+  const handleRun = () => {
+    const htmlFile = files.find(f => f.language === 'html')?.code || '';
+    const cssFiles = files.filter(f => f.language === 'css' || f.language === 'scss' || f.language === 'less').map(f => f.code).join('\n');
+    const jsFiles = files.filter(f => f.language === 'javascript' || f.language === 'typescript').map(f => f.code).join('\n');
+
+    const combined = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>${cssFiles}</style>
+        </head>
+        <body>
+          ${htmlFile}
+          <script>${jsFiles}</script>
+        </body>
+      </html>
+    `;
+    setPreviewContent(combined);
+    confetti({
+      particleCount: 40,
+      spread: 70,
+      origin: { y: 0.8 }
+    });
   };
 
   const COMMANDS = [
@@ -412,11 +487,18 @@ export default function App() {
       </AnimatePresence>
 
       {/* Sidebar - Navigation */}
-      <aside className="w-16 border-r border-white/5 flex flex-col items-center py-6 gap-8 bg-[#0D0D0E]">
+      <aside className="w-16 border-r border-white/5 flex flex-col items-center py-6 gap-8 bg-[#0D0D0E] z-30">
         <div className="p-2 bg-emerald-500/10 rounded-xl">
           <Code2 className="w-6 h-6 text-emerald-400" />
         </div>
         <nav className="flex flex-col gap-6">
+          <button 
+            onClick={() => setIsExplorerOpen(!isExplorerOpen)}
+            className={cn("p-2 rounded-lg transition-colors", isExplorerOpen ? "bg-white/10 text-white" : "hover:bg-white/5")}
+            title="Toggle File Explorer"
+          >
+            <Folder className="w-5 h-5" />
+          </button>
           <button 
             onClick={() => setActiveTab('editor')}
             className={cn("p-2 rounded-lg transition-colors", activeTab === 'editor' ? "bg-white/10 text-white" : "hover:bg-white/5")}
@@ -452,6 +534,55 @@ export default function App() {
         </div>
       </aside>
 
+      {/* File Explorer Panel */}
+      <AnimatePresence>
+        {isExplorerOpen && (
+          <motion.section 
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 240, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            className="border-r border-white/5 bg-[#0D0D0E] flex flex-col overflow-hidden"
+          >
+            <div className="h-12 border-b border-white/5 flex items-center px-4 justify-between bg-[#0A0A0B]">
+              <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Explorer</span>
+              <button 
+                onClick={createFile}
+                className="p-1 hover:bg-white/5 rounded text-zinc-400 hover:text-emerald-400 transition-colors"
+                title="New File"
+              >
+                <FilePlus className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-2">
+              {files.map(file => (
+                <div 
+                  key={file.id}
+                  className={cn(
+                    "group flex items-center px-4 py-1.5 cursor-pointer transition-colors relative",
+                    activeFileId === file.id ? "bg-emerald-500/10 text-emerald-400" : "hover:bg-white/5 text-zinc-400"
+                  )}
+                  onClick={() => setActiveFileId(file.id)}
+                >
+                  <FileCode className="w-3.5 h-3.5 mr-2 opacity-50" />
+                  <input 
+                    value={file.name}
+                    onChange={(e) => renameFile(file.id, e.target.value)}
+                    className="bg-transparent border-none text-xs focus:ring-0 p-0 w-full"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
       {/* Left Side - Preview (As requested by user) */}
       <section className="w-1/3 border-r border-white/5 flex flex-col bg-[#0D0D0E]">
         <div className="h-12 border-b border-white/5 flex items-center px-4 justify-between bg-[#0A0A0B]">
@@ -483,37 +614,40 @@ export default function App() {
       {/* Main Content - Editor & AI */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="h-12 border-b border-white/5 flex items-center px-6 justify-between bg-[#0D0D0E]">
+        <header className="h-16 border-b border-white/5 flex items-center px-6 justify-between bg-[#0D0D0E]">
           <div className="flex items-center gap-4">
+            <div className="flex bg-white/5 rounded-lg p-1 border border-white/10">
+              {files.map(file => (
+                <button
+                  key={file.id}
+                  onClick={() => setActiveFileId(file.id)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-xs font-mono transition-all flex items-center gap-2",
+                    activeFileId === file.id ? "bg-emerald-500 text-black font-bold" : "hover:bg-white/5 text-zinc-400"
+                  )}
+                >
+                  <Code2 className="w-3 h-3" />
+                  {file.name}
+                </button>
+              ))}
+            </div>
+            <div className="h-6 w-[1px] bg-white/10" />
             <select 
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              value={activeFile.language}
+              onChange={(e) => updateFile(activeFileId, { language: e.target.value })}
               className="bg-transparent text-xs font-mono border-none focus:ring-0 cursor-pointer hover:text-white transition-colors"
             >
               {LANGUAGES.map(lang => (
                 <option key={lang.id} value={lang.id} className="bg-[#0D0D0E]">{lang.name}</option>
               ))}
             </select>
-            <div className="h-4 w-[1px] bg-white/10" />
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setUseThinking(!useThinking)}
-                className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] uppercase tracking-tighter transition-all",
-                  useThinking ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" : "bg-white/5 text-zinc-500 border border-transparent"
-                )}
-              >
-                <Brain className="w-3 h-3" />
-                Thinking Mode
-              </button>
-            </div>
-            <div className="h-4 w-[1px] bg-white/10" />
-            <div className="flex items-center gap-2 bg-white/5 rounded-md px-2 py-1 border border-white/10">
-              <Zap className="w-3 h-3 text-blue-400" />
+            <div className="h-6 w-[1px] bg-white/10" />
+            <div className="flex items-center gap-2 bg-white/5 rounded-md px-3 py-1.5 border border-white/10">
+              <Zap className="w-3.5 h-3.5 text-blue-400" />
               <input 
                 type="password"
                 placeholder="Custom API Key (Gemini/DeepSeek)"
-                className="bg-transparent text-[10px] border-none focus:ring-0 w-32 placeholder:opacity-30"
+                className="bg-transparent text-xs border-none focus:ring-0 w-48 placeholder:opacity-30"
                 value={customApiKey}
                 onChange={e => setCustomApiKey(e.target.value)}
               />
@@ -522,6 +656,16 @@ export default function App() {
           
           <div className="flex items-center gap-3">
             <button 
+              onClick={() => setUseThinking(!useThinking)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all",
+                useThinking ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" : "bg-white/5 text-zinc-500 border border-transparent"
+              )}
+            >
+              <Brain className="w-3.5 h-3.5" />
+              Thinking Mode
+            </button>
+            <button 
               onClick={handleShare}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white/5 transition-colors"
             >
@@ -529,75 +673,69 @@ export default function App() {
               Share
             </button>
             <button 
-              onClick={handleFastFix}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              Fast Fix
-            </button>
-            <button 
-              onClick={handleDebug}
-              disabled={isDebugging}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
-            >
-              {isDebugging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bug className="w-3.5 h-3.5" />}
-              Debug
-            </button>
-            <button 
               onClick={handleRun}
               className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-colors"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              Run
+              Run Project
             </button>
           </div>
         </header>
 
-        {/* Editor Area */}
-        <div className="flex-1 relative">
-          <Editor
-            height="100%"
-            defaultLanguage="javascript"
-            language={language}
-            theme="vs-dark"
-            value={code}
-            onChange={(val) => setCode(val || '')}
-            onMount={(editor) => {
-              editor.addAction({
-                id: 'ai-format',
-                label: 'AI: Format Selection',
-                contextMenuGroupId: 'navigation',
-                contextMenuOrder: 1.5,
-                run: (ed) => handleCodeManipulation(ed, 'Format the code for better readability and standard conventions.'),
-              });
-              editor.addAction({
-                id: 'ai-refactor',
-                label: 'AI: Refactor Selection',
-                contextMenuGroupId: 'navigation',
-                contextMenuOrder: 1.6,
-                run: (ed) => handleCodeManipulation(ed, 'Refactor this code to be more efficient and maintainable.'),
-              });
-              editor.addAction({
-                id: 'ai-extract',
-                label: 'AI: Extract Variable',
-                contextMenuGroupId: 'navigation',
-                contextMenuOrder: 1.7,
-                run: (ed) => handleCodeManipulation(ed, 'Extract complex expressions into descriptive variables.'),
-              });
-            }}
-            options={{
-              fontSize: 14,
-              fontFamily: 'JetBrains Mono, monospace',
-              minimap: { enabled: false },
-              padding: { top: 20 },
-              scrollBeyondLastLine: false,
-              lineNumbers: 'on',
-              glyphMargin: true,
-              folding: true,
-              lineDecorationsWidth: 0,
-              lineNumbersMinChars: 3,
-            }}
-          />
+        {/* Multi-Editor Grid - 3 Boxes Now */}
+        <div className="flex-1 grid grid-cols-3 gap-[1px] bg-white/5 overflow-hidden">
+          {files.slice(0, 3).map((file, idx) => (
+            <div 
+              key={file.id} 
+              className={cn(
+                "relative transition-all duration-300 flex flex-col",
+                activeFileId === file.id ? "ring-1 ring-emerald-500/50 z-10" : "opacity-80 hover:opacity-100"
+              )}
+              onClick={() => setActiveFileId(file.id)}
+            >
+              <div className="h-8 bg-[#0D0D0E] border-b border-white/5 flex items-center px-3 justify-between z-20 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Box {idx + 1}</span>
+                  <span className="text-[10px] font-mono text-emerald-400/70 truncate max-w-[100px]">{file.name}</span>
+                </div>
+                <select 
+                  value={file.language}
+                  onChange={(e) => updateFile(file.id, { language: e.target.value })}
+                  className="bg-transparent text-[9px] font-mono border-none focus:ring-0 cursor-pointer opacity-50 hover:opacity-100"
+                >
+                  {LANGUAGES.map(lang => (
+                    <option key={lang.id} value={lang.id} className="bg-[#0D0D0E]">{lang.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1 min-h-0">
+                <Editor
+                  height="100%"
+                  language={file.language}
+                  theme="vs-dark"
+                  value={file.code}
+                  onChange={(val) => updateFile(file.id, { code: val || '' })}
+                  options={{
+                    fontSize: 12,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    minimap: { enabled: false },
+                    padding: { top: 10 },
+                    scrollBeyondLastLine: false,
+                    lineNumbers: 'on',
+                    glyphMargin: false,
+                    folding: true,
+                    lineDecorationsWidth: 0,
+                    lineNumbersMinChars: 2,
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+          {files.length < 3 && Array.from({ length: 3 - files.length }).map((_, i) => (
+            <div key={`empty-${i}`} className="bg-[#0D0D0E] flex items-center justify-center text-zinc-700 italic text-xs">
+              Empty Slot
+            </div>
+          ))}
         </div>
 
         {/* Bottom Panel - AI & Prompt */}
