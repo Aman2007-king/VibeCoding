@@ -30,6 +30,7 @@ import {
   Folder,
   FileCode,
   Palette,
+  Search,
   Settings,
   GitBranch,
   GitCommit,
@@ -50,6 +51,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Login from './components/Login';
 import Blog from './components/Blog';
+import About from './components/About';
 import { BookOpen, Key } from 'lucide-react';
 
 function cn(...inputs: ClassValue[]) {
@@ -219,6 +221,8 @@ export default function App() {
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState('');
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [currentTheme, setCurrentTheme] = useState<Theme>(THEMES[0]);
   const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
   const [isSourceControlOpen, setIsSourceControlOpen] = useState(false);
@@ -227,7 +231,7 @@ export default function App() {
   const [isGitInitialized, setIsGitInitialized] = useState(false);
   const [commitHistory, setCommitHistory] = useState<{ id: string, message: string, date: string }[]>([]);
   const [user, setUser] = useState<any>(null);
-  const [view, setView] = useState<'ide' | 'blog'>('ide');
+  const [view, setView] = useState<'ide' | 'blog' | 'about'>('ide');
   const [userApiKey, setUserApiKey] = useState('');
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
 
@@ -309,6 +313,13 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setIsPaletteOpen(prev => !prev);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setIsSearchOpen(true);
+        setIsExplorerOpen(false);
+        setIsSourceControlOpen(false);
+        setIsThemePanelOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -686,6 +697,7 @@ export default function App() {
     { id: 'debug', name: 'Debug Code', icon: Bug, action: handleDebug },
     { id: 'fix', name: 'Fast Fix', icon: Zap, action: handleFastFix },
     { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
+    { id: 'search', name: 'Global Search', icon: Search, action: () => { setIsSearchOpen(true); setIsExplorerOpen(false); setIsSourceControlOpen(false); setIsThemePanelOpen(false); } },
     { id: 'live', name: 'Live AI Session', icon: Volume2, action: () => setActiveTab('live') },
   ];
 
@@ -694,17 +706,41 @@ export default function App() {
     { id: 'debug', name: 'Debug Code', icon: Bug, action: handleDebug },
     { id: 'fix', name: 'Fast Fix', icon: Zap, action: handleFastFix },
     { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
+    { id: 'search', name: 'Global Search', icon: Search, action: () => { setIsSearchOpen(true); setIsExplorerOpen(false); setIsSourceControlOpen(false); setIsThemePanelOpen(false); } },
     { id: 'live', name: 'Live AI Session', icon: Volume2, action: () => setActiveTab('live') },
   ].filter(cmd => 
     cmd.name.toLowerCase().includes(paletteSearch.toLowerCase())
   ), [paletteSearch, handleGenerate, handleDebug, handleFastFix, handleShare]);
+
+  const searchResults = useMemo(() => {
+    if (!globalSearchQuery.trim()) return [];
+    const results: { fileId: number, fileName: string, line: number, text: string }[] = [];
+    files.forEach(file => {
+      const lines = file.code.split('\n');
+      lines.forEach((lineText, index) => {
+        if (lineText.toLowerCase().includes(globalSearchQuery.toLowerCase())) {
+          results.push({
+            fileId: file.id,
+            fileName: file.name,
+            line: index + 1,
+            text: lineText.trim()
+          });
+        }
+      });
+    });
+    return results;
+  }, [files, globalSearchQuery]);
 
   if (!user) {
     return <Login onLogin={setUser} />;
   }
 
   if (view === 'blog') {
-    return <Blog onBack={() => setView('ide')} />;
+    return <Blog onBack={() => setView('ide')} onNavigateAbout={() => setView('about')} />;
+  }
+
+  if (view === 'about') {
+    return <About onBack={() => setView('ide')} />;
   }
 
   return (
@@ -763,8 +799,24 @@ export default function App() {
           <SidebarButton 
             icon={Folder} 
             active={isExplorerOpen} 
-            onClick={() => setIsExplorerOpen(!isExplorerOpen)} 
+            onClick={() => {
+              setIsExplorerOpen(!isExplorerOpen);
+              setIsSearchOpen(false);
+              setIsSourceControlOpen(false);
+              setIsThemePanelOpen(false);
+            }} 
             title="Explorer" 
+          />
+          <SidebarButton 
+            icon={Search} 
+            active={isSearchOpen} 
+            onClick={() => {
+              setIsSearchOpen(!isSearchOpen);
+              setIsExplorerOpen(false);
+              setIsSourceControlOpen(false);
+              setIsThemePanelOpen(false);
+            }} 
+            title="Global Search" 
           />
           <SidebarButton 
             icon={Layout} 
@@ -806,7 +858,13 @@ export default function App() {
             icon={BookOpen} 
             active={false} 
             onClick={() => setView('blog')} 
-            title="Blog & About" 
+            title="Blog" 
+          />
+          <SidebarButton 
+            icon={User} 
+            active={false} 
+            onClick={() => setView('about')} 
+            title="About Us" 
           />
           <SidebarButton 
             icon={Key} 
@@ -1111,6 +1169,76 @@ export default function App() {
                   onDelete={deleteFile}
                 />
               ))}
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {/* Global Search Panel */}
+      <AnimatePresence>
+        {isSearchOpen && (
+          <motion.section 
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 300, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            className="border-r border-border-custom bg-bg-secondary flex flex-col overflow-hidden"
+          >
+            <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
+              <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Search</span>
+              <button onClick={() => setIsSearchOpen(false)} className="p-1 hover:bg-white/5 rounded">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 border-b border-border-custom">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" />
+                <input 
+                  autoFocus
+                  placeholder="Search in files..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-xs focus:ring-1 focus:ring-accent outline-none"
+                  value={globalSearchQuery}
+                  onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-4">
+              {searchResults.length > 0 ? (
+                <div className="space-y-4">
+                  <p className="px-2 text-[10px] uppercase tracking-widest opacity-40 font-bold">
+                    {searchResults.length} results in {new Set(searchResults.map(r => r.fileId)).size} files
+                  </p>
+                  <div className="space-y-1">
+                    {searchResults.map((result, i) => (
+                      <button 
+                        key={i}
+                        onClick={() => {
+                          setActiveFileId(result.fileId);
+                        }}
+                        className="w-full text-left p-2 rounded-lg hover:bg-white/5 transition-colors group"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <FileCode className="w-3 h-3 opacity-40" />
+                          <span className="text-[10px] font-bold text-accent truncate">{result.fileName}</span>
+                          <span className="text-[10px] opacity-30 ml-auto">Line {result.line}</span>
+                        </div>
+                        <p className="text-[11px] text-text-secondary truncate opacity-70 group-hover:opacity-100">
+                          {result.text}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : globalSearchQuery ? (
+                <div className="flex flex-col items-center justify-center h-full opacity-20 text-center p-4">
+                  <Search className="w-12 h-12 mb-4" />
+                  <p className="text-xs">No results found for "{globalSearchQuery}"</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full opacity-20 text-center p-4">
+                  <Search className="w-12 h-12 mb-4" />
+                  <p className="text-xs">Enter a query to search across all files</p>
+                </div>
+              )}
             </div>
           </motion.section>
         )}
