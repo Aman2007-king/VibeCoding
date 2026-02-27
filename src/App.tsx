@@ -286,6 +286,15 @@ export default function App() {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'GITHUB_AUTH_SUCCESS') {
         setGithubToken(event.data.token);
+        setUser(event.data.user);
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      }
+      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
+        setUser(event.data.user);
         confetti({
           particleCount: 100,
           spread: 70,
@@ -665,6 +674,12 @@ export default function App() {
       origin: { y: 0.8 }
     });
   }, [files]);
+
+  useEffect(() => {
+    if (user) {
+      handleRun();
+    }
+  }, [user, handleRun]);
 
   const COMMANDS = [
     { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setPrompt('Build a modern landing page'); handleGenerate(); } },

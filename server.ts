@@ -17,16 +17,35 @@ async function startServer() {
 
   // Google OAuth URLs
   app.get("/api/auth/google/url", (req, res) => {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      return res.status(500).json({ error: "Google Client ID not configured" });
+    // Aggressively clean the ID (remove quotes and whitespace)
+    const clientId = process.env.GOOGLE_CLIENT_ID?.trim().replace(/^["']|["']$/g, "");
+    const appUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, "");
+    
+    if (!clientId || clientId === "MY_GEMINI_API_KEY" || clientId.length < 10) {
+      return res.status(400).json({ 
+        error: "Google Client ID is missing or invalid in Secrets.",
+        details: "Ensure GOOGLE_CLIENT_ID is set in the Secrets panel."
+      });
     }
-    const redirectUri = `${process.env.APP_URL}/auth/google/callback`;
-    const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid%20email%20profile&access_type=offline&prompt=consent`;
-    res.json({ url });
+
+    const redirectUri = `${appUrl}/auth/google/callback`;
+    
+    console.log(`Generating Google Auth URL with ClientID: ${clientId.substring(0, 10)}... and RedirectURI: ${redirectUri}`);
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      access_type: "offline",
+      prompt: "consent"
+    });
+
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    res.json({ url, redirectUri });
   });
 
-  app.get("/auth/google/callback", async (req, res) => {
+  app.get(["/auth/google/callback", "/auth/google/callback/"], async (req, res) => {
     const { code } = req.query;
     if (!code) {
       return res.status(400).send("No code provided");
@@ -83,16 +102,22 @@ async function startServer() {
 
   // GitHub OAuth URLs
   app.get("/api/auth/github/url", (req, res) => {
-    const clientId = process.env.GITHUB_CLIENT_ID;
-    if (!clientId) {
-      return res.status(500).json({ error: "GitHub Client ID not configured" });
+    const clientId = process.env.GITHUB_CLIENT_ID?.trim();
+    const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+
+    if (!clientId || clientId === "MY_GITHUB_CLIENT_ID") {
+      return res.status(400).json({ error: "GitHub Client ID is not configured in Secrets." });
     }
-    const redirectUri = `${process.env.APP_URL}/auth/github/callback`;
-    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=user,repo`;
+    if (!appUrl) {
+      return res.status(400).json({ error: "APP_URL is not configured in Secrets." });
+    }
+
+    const redirectUri = `${appUrl}/auth/github/callback`;
+    const url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=user,repo`;
     res.json({ url });
   });
 
-  app.get("/auth/github/callback", async (req, res) => {
+  app.get(["/auth/github/callback", "/auth/github/callback/"], async (req, res) => {
     const { code } = req.query;
     if (!code) {
       return res.status(400).send("No code provided");
@@ -114,14 +139,25 @@ async function startServer() {
 
       const data = await response.json();
       
-      // In a real app, you'd store this in a session/cookie
-      // For now, we'll just pass it back to the frontend via postMessage
+      // Get GitHub user info
+      const userRes = await fetch("https://api.github.com/user", {
+        headers: {
+          Authorization: `token ${data.access_token}`,
+          "User-Agent": "Nexus-Forge",
+        },
+      });
+      const user = await userRes.json();
+
       res.send(`
         <html>
           <body>
             <script>
               if (window.opener) {
-                window.opener.postMessage({ type: 'GITHUB_AUTH_SUCCESS', token: ${JSON.stringify(data.access_token)} }, '*');
+                window.opener.postMessage({ 
+                  type: 'GITHUB_AUTH_SUCCESS', 
+                  token: ${JSON.stringify(data.access_token)},
+                  user: ${JSON.stringify(user)}
+                }, '*');
                 window.close();
               } else {
                 window.location.href = '/';
