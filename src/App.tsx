@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import Editor, { loader } from '@monaco-editor/react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, memo, Suspense, lazy } from 'react';
+const Editor = lazy(() => import('@monaco-editor/react'));
+import { loader } from '@monaco-editor/react';
 import { 
   Play, 
   Bug, 
@@ -43,10 +44,13 @@ import Markdown from 'react-markdown';
 import confetti from 'canvas-confetti';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { generateCode, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI } from './services/geminiService';
+import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream } from './services/geminiService';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import Login from './components/Login';
+import Blog from './components/Blog';
+import { BookOpen, Key } from 'lucide-react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -155,6 +159,41 @@ const THEMES: Theme[] = [
   }
 ];
 
+// Memoized Sub-components for performance
+const FileItem = memo(({ file, isActive, onSelect, onRename, onDelete }: any) => (
+  <div 
+    className={cn(
+      "group flex items-center px-4 py-1.5 cursor-pointer transition-colors relative",
+      isActive ? "bg-accent/10 text-accent" : "hover:bg-white/5 text-text-secondary"
+    )}
+    onClick={() => onSelect(file.id)}
+  >
+    <FileCode className="w-3.5 h-3.5 mr-2 opacity-50" />
+    <input 
+      value={file.name}
+      onChange={(e) => onRename(file.id, e.target.value)}
+      className="bg-transparent border-none text-xs focus:ring-0 p-0 w-full"
+      onClick={(e) => e.stopPropagation()}
+    />
+    <button 
+      onClick={(e) => { e.stopPropagation(); onDelete(file.id); }}
+      className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
+    >
+      <Trash2 className="w-3 h-3" />
+    </button>
+  </div>
+));
+
+const SidebarButton = memo(({ icon: Icon, active, onClick, title, className }: any) => (
+  <button 
+    onClick={onClick}
+    className={cn("p-2 rounded-lg transition-colors", active ? "bg-white/10 text-white" : "hover:bg-white/5", className)}
+    title={title}
+  >
+    <Icon className="w-5 h-5" />
+  </button>
+));
+
 export default function App() {
   const [files, setFiles] = useState<FileState[]>([
     { id: 1, name: 'index.html', code: '<div class="container">\n  <h1>Nexus Forge</h1>\n  <p>Multi-language combination preview</p>\n  <button id="btn">Click Me</button>\n</div>', language: 'html' },
@@ -177,7 +216,6 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [liveTranscription, setLiveTranscription] = useState<string[]>([]);
-  const [customApiKey, setCustomApiKey] = useState('');
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState('');
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
@@ -188,6 +226,10 @@ export default function App() {
   const [commitMessage, setCommitMessage] = useState('');
   const [isGitInitialized, setIsGitInitialized] = useState(false);
   const [commitHistory, setCommitHistory] = useState<{ id: string, message: string, date: string }[]>([]);
+  const [user, setUser] = useState<any>(null);
+  const [view, setView] = useState<'ide' | 'blog'>('ide');
+  const [userApiKey, setUserApiKey] = useState('');
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
 
   useEffect(() => {
     // Apply theme colors to CSS variables
@@ -276,11 +318,11 @@ export default function App() {
     setIsGenerating(true);
     setActiveTab('ai');
     try {
-      const command = await processVoiceCommand(text);
+      const command = await processVoiceCommand(text, userApiKey);
       setAiResponse(`Voice Command Interpreted: ${command.description}`);
       
       if (command.intent === 'build') {
-        const generated = await generateCode(command.description, command.suggestedLanguage, useThinking);
+        const generated = await generateCode(command.description, command.suggestedLanguage, useThinking, userApiKey);
         // For multi-file, we'll just update the active file for now
         updateFile(activeFileId, { code: generated, language: command.suggestedLanguage });
       }
@@ -306,10 +348,16 @@ export default function App() {
     if (!prompt) return;
     setIsGenerating(true);
     setActiveTab('ai');
+    setAiResponse('Nexus AI is thinking...');
     try {
-      const generated = await generateCode(prompt, activeFile.language, useThinking);
-      updateFile(activeFileId, { code: generated });
-      setAiResponse(`Successfully generated code for: ${prompt}`);
+      const generated = await generateCodeStream(prompt, activeFile.language, useThinking, (text) => {
+        setAiResponse(text);
+      }, userApiKey);
+      
+      // Strip markdown code blocks if present
+      const cleanCode = generated.replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
+      
+      updateFile(activeFileId, { code: cleanCode });
       handleRun();
       confetti({
         particleCount: 50,
@@ -326,7 +374,7 @@ export default function App() {
     setIsGenerating(true);
     setActiveTab('ai');
     try {
-      const fixed = await fastFix(activeFile.code, activeFile.language, customApiKey);
+      const fixed = await fastFix(activeFile.code, activeFile.language, userApiKey);
       updateFile(activeFileId, { code: fixed });
       setAiResponse('Applied a fast fix using Gemini Flash-Lite.');
     } catch (error) {
@@ -340,7 +388,7 @@ export default function App() {
     setIsDebugging(true);
     setActiveTab('ai');
     try {
-      const debugResult = await debugCode(activeFile.code, activeFile.language);
+      const debugResult = await debugCode(activeFile.code, activeFile.language, userApiKey);
       setAiResponse(debugResult);
     } catch (error) {
       setAiResponse('Error debugging code.');
@@ -355,11 +403,28 @@ export default function App() {
     setChatInput('');
     setChatHistory(prev => [...prev, { role: 'user', parts: [{ text: userMsg }] }]);
     
+    // Add a placeholder for AI response
+    setChatHistory(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
+
     try {
-      const response = await chatWithAI(userMsg, chatHistory.map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: h.parts })));
-      setChatHistory(prev => [...prev, { role: 'model', parts: [{ text: response }] }]);
+      await chatWithAIStream(
+        userMsg, 
+        chatHistory.map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: h.parts })),
+        (text) => {
+          setChatHistory(prev => {
+            const newHistory = [...prev];
+            newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text }] };
+            return newHistory;
+          });
+        },
+        userApiKey
+      );
     } catch (error) {
-      setChatHistory(prev => [...prev, { role: 'model', parts: [{ text: 'Error connecting to Nexus AI.' }] }]);
+      setChatHistory(prev => {
+        const newHistory = [...prev];
+        newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text: 'Error connecting to Nexus AI.' }] };
+        return newHistory;
+      });
     }
   };
 
@@ -370,7 +435,7 @@ export default function App() {
       return;
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+    const ai = new GoogleGenAI({ apiKey: userApiKey || process.env.GEMINI_API_KEY || "" });
     
     try {
       const session = await ai.live.connect({
@@ -430,14 +495,22 @@ export default function App() {
     }
   };
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     try {
       const shareUrl = window.location.href;
-      await navigator.clipboard.writeText(shareUrl);
-      alert('Project link copied to clipboard!');
+      if (navigator.share) {
+        await navigator.share({
+          title: 'Nexus Forge Project',
+          text: 'Check out my project on Nexus Forge!',
+          url: shareUrl,
+        });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        alert('Project link copied to clipboard!');
+      }
     } catch (err) {
-      console.error('Failed to copy: ', err);
-      // Fallback for some browsers
+      console.error('Share failed:', err);
+      // Fallback copy
       const textArea = document.createElement("textarea");
       textArea.value = window.location.href;
       document.body.appendChild(textArea);
@@ -446,7 +519,7 @@ export default function App() {
       document.body.removeChild(textArea);
       alert('Project link copied to clipboard!');
     }
-  };
+  }, []);
 
   const handleGitCommit = () => {
     if (!commitMessage.trim() || stagedFiles.size === 0) return;
@@ -506,7 +579,7 @@ export default function App() {
     setAiResponse(`AI is performing: ${action}...`);
 
     try {
-      const result = await manipulateCode(selectedText, activeFile.language, action);
+      const result = await manipulateCode(selectedText, activeFile.language, action, userApiKey);
       editor.executeEdits('ai-manipulation', [
         {
           range: selection,
@@ -526,61 +599,72 @@ export default function App() {
     }
   };
 
-  const activeFile = files.find(f => f.id === activeFileId) || files[0];
+  const activeFile = useMemo(() => files.find(f => f.id === activeFileId) || files[0], [files, activeFileId]);
 
-  const createFile = () => {
-    const newId = Math.max(...files.map(f => f.id), 0) + 1;
-    const newFile: FileState = {
-      id: newId,
-      name: `file_${newId}.js`,
-      code: '// New file',
-      language: 'javascript'
-    };
-    setFiles([...files, newFile]);
-    setActiveFileId(newId);
-  };
-
-  const deleteFile = (id: number) => {
-    if (files.length <= 1) return;
-    const newFiles = files.filter(f => f.id !== id);
-    setFiles(newFiles);
-    if (activeFileId === id) {
-      setActiveFileId(newFiles[0].id);
-    }
-  };
-
-  const renameFile = (id: number, newName: string) => {
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
-  };
-
-  const updateFile = (id: number, updates: Partial<FileState>) => {
+  const updateFile = useCallback((id: number, updates: Partial<FileState>) => {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
-  };
+  }, []);
 
-  const handleRun = () => {
-    const htmlFile = files.find(f => f.language === 'html')?.code || '';
-    const cssFiles = files.filter(f => f.language === 'css' || f.language === 'scss' || f.language === 'less').map(f => f.code).join('\n');
-    const jsFiles = files.filter(f => f.language === 'javascript' || f.language === 'typescript').map(f => f.code).join('\n');
+  const createFile = useCallback(() => {
+    setFiles(prev => {
+      const newId = Math.max(...prev.map(f => f.id), 0) + 1;
+      const newFile: FileState = {
+        id: newId,
+        name: `file_${newId}.js`,
+        code: '// New file',
+        language: 'javascript'
+      };
+      setActiveFileId(newId);
+      return [...prev, newFile];
+    });
+  }, []);
+
+  const deleteFile = useCallback((id: number) => {
+    setFiles(prev => {
+      if (prev.length <= 1) return prev;
+      const newFiles = prev.filter(f => f.id !== id);
+      if (activeFileId === id) {
+        setActiveFileId(newFiles[0].id);
+      }
+      return newFiles;
+    });
+  }, [activeFileId]);
+
+  const renameFile = useCallback((id: number, newName: string) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+  }, []);
+
+  const handleRun = useCallback(() => {
+    const htmlFile = files.find(f => f.name === 'index.html')?.code || '';
+    const cssFile = files.find(f => f.name === 'styles.css')?.code || '';
+    const jsFile = files.find(f => f.name === 'script.js')?.code || '';
 
     const combined = `
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
         <head>
-          <style>${cssFiles}</style>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            ${cssFile}
+          </style>
         </head>
         <body>
           ${htmlFile}
-          <script>${jsFiles}</script>
+          <script>
+            ${jsFile}
+          </script>
         </body>
       </html>
     `;
+    
     setPreviewContent(combined);
     confetti({
       particleCount: 40,
       spread: 70,
       origin: { y: 0.8 }
     });
-  };
+  }, [files]);
 
   const COMMANDS = [
     { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setPrompt('Build a modern landing page'); handleGenerate(); } },
@@ -590,9 +674,23 @@ export default function App() {
     { id: 'live', name: 'Live AI Session', icon: Volume2, action: () => setActiveTab('live') },
   ];
 
-  const filteredCommands = COMMANDS.filter(cmd => 
+  const filteredCommands = useMemo(() => [
+    { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setPrompt('Build a modern landing page'); handleGenerate(); } },
+    { id: 'debug', name: 'Debug Code', icon: Bug, action: handleDebug },
+    { id: 'fix', name: 'Fast Fix', icon: Zap, action: handleFastFix },
+    { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
+    { id: 'live', name: 'Live AI Session', icon: Volume2, action: () => setActiveTab('live') },
+  ].filter(cmd => 
     cmd.name.toLowerCase().includes(paletteSearch.toLowerCase())
-  );
+  ), [paletteSearch, handleGenerate, handleDebug, handleFastFix, handleShare]);
+
+  if (!user) {
+    return <Login onLogin={setUser} />;
+  }
+
+  if (view === 'blog') {
+    return <Blog onBack={() => setView('ide')} />;
+  }
 
   return (
     <div className="flex h-screen w-full bg-bg-primary text-text-secondary font-sans overflow-hidden relative">
@@ -647,61 +745,133 @@ export default function App() {
           <Code2 className="w-6 h-6 text-accent" />
         </div>
         <nav className="flex flex-col gap-6">
-          <button 
-            onClick={() => setIsExplorerOpen(!isExplorerOpen)}
-            className={cn("p-2 rounded-lg transition-colors", isExplorerOpen ? "bg-white/10 text-white" : "hover:bg-white/5")}
-            title="Toggle File Explorer"
-          >
-            <Folder className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => setActiveTab('editor')}
-            className={cn("p-2 rounded-lg transition-colors", activeTab === 'editor' ? "bg-white/10 text-white" : "hover:bg-white/5")}
-          >
-            <Layout className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => setActiveTab('ai')}
-            className={cn("p-2 rounded-lg transition-colors", activeTab === 'ai' ? "bg-white/10 text-white" : "hover:bg-white/5")}
-          >
-            <Sparkles className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => setActiveTab('chat')}
-            className={cn("p-2 rounded-lg transition-colors", activeTab === 'chat' ? "bg-white/10 text-white" : "hover:bg-white/5")}
-          >
-            <MessageSquare className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => setActiveTab('live')}
-            className={cn("p-2 rounded-lg transition-colors", activeTab === 'live' ? "bg-white/10 text-white" : "hover:bg-white/5")}
-          >
-            <Volume2 className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => setIsThemePanelOpen(!isThemePanelOpen)}
-            className={cn("p-2 rounded-lg transition-colors", isThemePanelOpen ? "bg-white/10 text-white" : "hover:bg-white/5")}
-            title="Theme Customization"
-          >
-            <Palette className="w-5 h-5" />
-          </button>
-          <button 
-            onClick={() => setIsSourceControlOpen(!isSourceControlOpen)}
-            className={cn("p-2 rounded-lg transition-colors", isSourceControlOpen ? "bg-white/10 text-white" : "hover:bg-white/5")}
-            title="Source Control"
-          >
-            <GitBranch className="w-5 h-5" />
-          </button>
+          <SidebarButton 
+            icon={Folder} 
+            active={isExplorerOpen} 
+            onClick={() => setIsExplorerOpen(!isExplorerOpen)} 
+            title="Explorer" 
+          />
+          <SidebarButton 
+            icon={Layout} 
+            active={activeTab === 'editor'} 
+            onClick={() => setActiveTab('editor')} 
+            title="Editor" 
+          />
+          <SidebarButton 
+            icon={Sparkles} 
+            active={activeTab === 'ai'} 
+            onClick={() => setActiveTab('ai')} 
+            title="AI Assistant" 
+          />
+          <SidebarButton 
+            icon={MessageSquare} 
+            active={activeTab === 'chat'} 
+            onClick={() => setActiveTab('chat')} 
+            title="AI Chat" 
+          />
+          <SidebarButton 
+            icon={Volume2} 
+            active={activeTab === 'live'} 
+            onClick={() => setActiveTab('live')} 
+            title="Live AI" 
+          />
+          <SidebarButton 
+            icon={Palette} 
+            active={isThemePanelOpen} 
+            onClick={() => setIsThemePanelOpen(!isThemePanelOpen)} 
+            title="Theme Customization" 
+          />
+          <SidebarButton 
+            icon={GitBranch} 
+            active={isSourceControlOpen} 
+            onClick={() => setIsSourceControlOpen(!isSourceControlOpen)} 
+            title="Source Control" 
+          />
+          <SidebarButton 
+            icon={BookOpen} 
+            active={false} 
+            onClick={() => setView('blog')} 
+            title="Blog & About" 
+          />
+          <SidebarButton 
+            icon={Key} 
+            active={isApiKeyModalOpen} 
+            onClick={() => setIsApiKeyModalOpen(true)} 
+            title="API Key Settings" 
+          />
         </nav>
         <div className="mt-auto flex flex-col gap-6">
-          <button 
-            onClick={handleGithubConnect}
-            className={cn("p-2 rounded-lg transition-colors", githubToken ? "text-emerald-400" : "hover:bg-white/5")}
-          >
-            <Github className="w-5 h-5" />
-          </button>
+          <SidebarButton 
+            icon={Github} 
+            active={!!githubToken} 
+            onClick={handleGithubConnect} 
+            title="Connect GitHub" 
+            className={githubToken ? "text-emerald-400" : ""}
+          />
+          <SidebarButton 
+            icon={Settings} 
+            onClick={() => setUser(null)} 
+            title="Logout" 
+            className="text-text-secondary"
+          />
         </div>
       </aside>
+
+      {/* API Key Modal */}
+      <AnimatePresence>
+        {isApiKeyModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="w-full max-w-md bg-bg-secondary border border-white/10 rounded-3xl p-8 space-y-6"
+            >
+              <div className="flex items-center gap-3 text-accent">
+                <Key className="w-6 h-6" />
+                <h2 className="text-xl font-bold">AI API Configuration</h2>
+              </div>
+              <p className="text-sm text-text-secondary">
+                By default, Nexus Forge uses a shared free API key. For faster processing and higher limits, you can provide your own Gemini API key.
+              </p>
+              <div className="space-y-2">
+                <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">Your Gemini API Key</label>
+                <input 
+                  type="password"
+                  value={userApiKey}
+                  onChange={(e) => setUserApiKey(e.target.value)}
+                  placeholder="Paste your key here..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-accent outline-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button 
+                  onClick={() => setIsApiKeyModalOpen(false)}
+                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm transition-all"
+                >
+                  Close
+                </button>
+                <button 
+                  onClick={() => {
+                    setIsApiKeyModalOpen(false);
+                    alert('API key updated successfully!');
+                  }}
+                  className="flex-1 py-3 bg-accent text-accent-foreground rounded-xl font-bold text-sm hover:opacity-90 transition-all"
+                >
+                  Save Key
+                </button>
+              </div>
+              <p className="text-[10px] text-center opacity-30">
+                Your key is stored locally in your browser session and never sent to our servers.
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Source Control Panel */}
       <AnimatePresence>
@@ -917,28 +1087,14 @@ export default function App() {
             </div>
             <div className="flex-1 overflow-y-auto py-2">
               {files.map(file => (
-                <div 
+                <FileItem 
                   key={file.id}
-                  className={cn(
-                    "group flex items-center px-4 py-1.5 cursor-pointer transition-colors relative",
-                    activeFileId === file.id ? "bg-accent/10 text-accent" : "hover:bg-white/5 text-text-secondary"
-                  )}
-                  onClick={() => setActiveFileId(file.id)}
-                >
-                  <FileCode className="w-3.5 h-3.5 mr-2 opacity-50" />
-                  <input 
-                    value={file.name}
-                    onChange={(e) => renameFile(file.id, e.target.value)}
-                    className="bg-transparent border-none text-xs focus:ring-0 p-0 w-full"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
+                  file={file}
+                  isActive={activeFileId === file.id}
+                  onSelect={setActiveFileId}
+                  onRename={renameFile}
+                  onDelete={deleteFile}
+                />
               ))}
             </div>
           </motion.section>
@@ -1005,13 +1161,13 @@ export default function App() {
             </select>
             <div className="h-6 w-[1px] bg-white/10" />
             <div className="flex items-center gap-2 bg-white/5 rounded-md px-3 py-1.5 border border-white/10">
-              <Zap className="w-3.5 h-3.5 text-blue-400" />
+              <Key className="w-3.5 h-3.5 text-blue-400" />
               <input 
                 type="password"
-                placeholder="Custom API Key (Gemini/DeepSeek)"
+                placeholder="Gemini API Key"
                 className="bg-transparent text-xs border-none focus:ring-0 w-48 placeholder:opacity-30"
-                value={customApiKey}
-                onChange={e => setCustomApiKey(e.target.value)}
+                value={userApiKey}
+                onChange={e => setUserApiKey(e.target.value)}
               />
             </div>
           </div>
@@ -1071,25 +1227,27 @@ export default function App() {
                 </select>
               </div>
               <div className="flex-1 min-h-0">
-                <Editor
-                  height="100%"
-                  language={file.language}
-                  theme="nexus-theme"
-                  value={file.code}
-                  onChange={(val) => updateFile(file.id, { code: val || '' })}
-                  options={{
-                    fontSize: 12,
-                    fontFamily: 'JetBrains Mono, monospace',
-                    minimap: { enabled: false },
-                    padding: { top: 10 },
-                    scrollBeyondLastLine: false,
-                    lineNumbers: 'on',
-                    glyphMargin: false,
-                    folding: true,
-                    lineDecorationsWidth: 0,
-                    lineNumbersMinChars: 2,
-                  }}
-                />
+                <Suspense fallback={<div className="h-full w-full flex items-center justify-center bg-bg-primary text-text-secondary animate-pulse">Loading Editor...</div>}>
+                  <Editor
+                    height="100%"
+                    language={file.language}
+                    theme="nexus-theme"
+                    value={file.code}
+                    onChange={(val) => updateFile(file.id, { code: val || '' })}
+                    options={{
+                      fontSize: 12,
+                      fontFamily: 'JetBrains Mono, monospace',
+                      minimap: { enabled: false },
+                      padding: { top: 10 },
+                      scrollBeyondLastLine: false,
+                      lineNumbers: 'on',
+                      glyphMargin: false,
+                      folding: true,
+                      lineDecorationsWidth: 0,
+                      lineNumbersMinChars: 2,
+                    }}
+                  />
+                </Suspense>
               </div>
             </div>
           ))}
@@ -1141,16 +1299,30 @@ export default function App() {
                           code({ node, inline, className, children, ...props }: any) {
                             const match = /language-(\w+)/.exec(className || '');
                             return !inline && match ? (
-                              <SyntaxHighlighter
-                                style={vscDarkPlus}
-                                language={match[1]}
-                                PreTag="div"
-                                {...props}
-                              >
-                                {String(children).replace(/\n$/, '')}
-                              </SyntaxHighlighter>
+                              <div className="relative group">
+                                <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                  <button 
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(String(children));
+                                      alert('Code copied!');
+                                    }}
+                                    className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md backdrop-blur-sm"
+                                  >
+                                    <Share2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                <SyntaxHighlighter
+                                  style={vscDarkPlus}
+                                  language={match[1]}
+                                  PreTag="div"
+                                  className="rounded-xl !bg-black/40 !p-4 border border-white/5"
+                                  {...props}
+                                >
+                                  {String(children).replace(/\n$/, '')}
+                                </SyntaxHighlighter>
+                              </div>
                             ) : (
-                              <code className={className} {...props}>
+                              <code className={cn("bg-white/10 px-1.5 py-0.5 rounded text-accent", className)} {...props}>
                                 {children}
                               </code>
                             );
@@ -1190,16 +1362,30 @@ export default function App() {
                                 code({ node, inline, className, children, ...props }: any) {
                                   const match = /language-(\w+)/.exec(className || '');
                                   return !inline && match ? (
-                                    <SyntaxHighlighter
-                                      style={vscDarkPlus}
-                                      language={match[1]}
-                                      PreTag="div"
-                                      {...props}
-                                    >
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
+                                    <div className="relative group my-4">
+                                      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                        <button 
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(String(children));
+                                            alert('Code copied!');
+                                          }}
+                                          className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md backdrop-blur-sm"
+                                        >
+                                          <Share2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                      <SyntaxHighlighter
+                                        style={vscDarkPlus}
+                                        language={match[1]}
+                                        PreTag="div"
+                                        className="rounded-xl !bg-black/40 !p-4 border border-white/5"
+                                        {...props}
+                                      >
+                                        {String(children).replace(/\n$/, '')}
+                                      </SyntaxHighlighter>
+                                    </div>
                                   ) : (
-                                    <code className={className} {...props}>
+                                    <code className={cn("bg-white/10 px-1.5 py-0.5 rounded text-accent", className)} {...props}>
                                       {children}
                                     </code>
                                   );
