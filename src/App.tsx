@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
 import { 
   Play, 
   Bug, 
@@ -27,7 +27,16 @@ import {
   Trash2,
   Edit3,
   Folder,
-  FileCode
+  FileCode,
+  Palette,
+  Settings,
+  GitBranch,
+  GitCommit,
+  GitPullRequest,
+  GitMerge,
+  History,
+  Check,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
@@ -77,6 +86,75 @@ interface FileState {
   language: string;
 }
 
+interface Theme {
+  id: string;
+  name: string;
+  colors: {
+    '--bg-primary': string;
+    '--bg-secondary': string;
+    '--accent': string;
+    '--accent-foreground': string;
+    '--border': string;
+    '--text-primary': string;
+    '--text-secondary': string;
+  };
+}
+
+const THEMES: Theme[] = [
+  {
+    id: 'nexus',
+    name: 'Nexus Dark',
+    colors: {
+      '--bg-primary': '#0A0A0B',
+      '--bg-secondary': '#0D0D0E',
+      '--accent': '#10b981',
+      '--accent-foreground': '#000000',
+      '--border': 'rgba(255, 255, 255, 0.05)',
+      '--text-primary': '#ffffff',
+      '--text-secondary': '#a1a1aa',
+    }
+  },
+  {
+    id: 'midnight',
+    name: 'Midnight',
+    colors: {
+      '--bg-primary': '#020617',
+      '--bg-secondary': '#0f172a',
+      '--accent': '#38bdf8',
+      '--accent-foreground': '#ffffff',
+      '--border': 'rgba(56, 189, 248, 0.1)',
+      '--text-primary': '#f8fafc',
+      '--text-secondary': '#94a3b8',
+    }
+  },
+  {
+    id: 'cyberpunk',
+    name: 'Cyberpunk',
+    colors: {
+      '--bg-primary': '#1a0b2e',
+      '--bg-secondary': '#2d1b4e',
+      '--accent': '#f0abfc',
+      '--accent-foreground': '#000000',
+      '--border': 'rgba(240, 171, 252, 0.2)',
+      '--text-primary': '#ffffff',
+      '--text-secondary': '#c084fc',
+    }
+  },
+  {
+    id: 'solarized',
+    name: 'Solarized',
+    colors: {
+      '--bg-primary': '#002b36',
+      '--bg-secondary': '#073642',
+      '--accent': '#cb4b16',
+      '--accent-foreground': '#ffffff',
+      '--border': 'rgba(147, 161, 161, 0.1)',
+      '--text-primary': '#fdf6e3',
+      '--text-secondary': '#93a1a1',
+    }
+  }
+];
+
 export default function App() {
   const [files, setFiles] = useState<FileState[]>([
     { id: 1, name: 'index.html', code: '<div class="container">\n  <h1>Nexus Forge</h1>\n  <p>Multi-language combination preview</p>\n  <button id="btn">Click Me</button>\n</div>', language: 'html' },
@@ -102,6 +180,41 @@ export default function App() {
   const [customApiKey, setCustomApiKey] = useState('');
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState('');
+  const [isExplorerOpen, setIsExplorerOpen] = useState(true);
+  const [currentTheme, setCurrentTheme] = useState<Theme>(THEMES[0]);
+  const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
+  const [isSourceControlOpen, setIsSourceControlOpen] = useState(false);
+  const [stagedFiles, setStagedFiles] = useState<Set<number>>(new Set());
+  const [commitMessage, setCommitMessage] = useState('');
+  const [isGitInitialized, setIsGitInitialized] = useState(false);
+  const [commitHistory, setCommitHistory] = useState<{ id: string, message: string, date: string }[]>([]);
+
+  useEffect(() => {
+    // Apply theme colors to CSS variables
+    const root = document.documentElement;
+    Object.entries(currentTheme.colors).forEach(([key, value]) => {
+      root.style.setProperty(key, value);
+    });
+
+    // Update Monaco theme
+    loader.init().then(monaco => {
+      monaco.editor.defineTheme('nexus-theme', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [],
+        colors: {
+          'editor.background': currentTheme.colors['--bg-primary'],
+          'editor.foreground': currentTheme.colors['--text-primary'],
+          'editorLineNumber.foreground': currentTheme.colors['--text-secondary'],
+          'editor.selectionBackground': currentTheme.colors['--accent'] + '33',
+          'editor.lineHighlightBackground': currentTheme.colors['--bg-secondary'],
+          'editorCursor.foreground': currentTheme.colors['--accent'],
+          'editor.inactiveSelectionBackground': currentTheme.colors['--accent'] + '11',
+        }
+      });
+      monaco.editor.setTheme('nexus-theme');
+    });
+  }, [currentTheme]);
 
   const recognitionRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -335,6 +448,50 @@ export default function App() {
     }
   };
 
+  const handleGitCommit = () => {
+    if (!commitMessage.trim() || stagedFiles.size === 0) return;
+    
+    const newCommit = {
+      id: Math.random().toString(36).substring(7),
+      message: commitMessage,
+      date: new Date().toLocaleString()
+    };
+    
+    setCommitHistory(prev => [newCommit, ...prev]);
+    setCommitMessage('');
+    setStagedFiles(new Set());
+    alert(`Committed: ${newCommit.message}`);
+  };
+
+  const handleGitPush = async () => {
+    if (!githubToken) {
+      alert('Please connect your GitHub account first.');
+      return;
+    }
+    
+    alert('Pushing to GitHub... (Simulated via API)');
+    // In a real app, we would use octokit to create a repo or update files
+    // For this demo, we'll simulate the success
+    setTimeout(() => {
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+      alert('Successfully pushed to GitHub!');
+    }, 1500);
+  };
+
+  const toggleStageFile = (id: number) => {
+    const newStaged = new Set(stagedFiles);
+    if (newStaged.has(id)) {
+      newStaged.delete(id);
+    } else {
+      newStaged.add(id);
+    }
+    setStagedFiles(newStaged);
+  };
+
   const handleCodeManipulation = async (editor: any, action: string) => {
     const selection = editor.getSelection();
     const selectedText = editor.getModel().getValueInRange(selection);
@@ -368,8 +525,6 @@ export default function App() {
       setIsGenerating(false);
     }
   };
-
-  const [isExplorerOpen, setIsExplorerOpen] = useState(true);
 
   const activeFile = files.find(f => f.id === activeFileId) || files[0];
 
@@ -440,7 +595,7 @@ export default function App() {
   );
 
   return (
-    <div className="flex h-screen w-full bg-[#0A0A0B] text-zinc-300 font-sans overflow-hidden relative">
+    <div className="flex h-screen w-full bg-bg-primary text-text-secondary font-sans overflow-hidden relative">
       {/* Command Palette */}
       <AnimatePresence>
         {isPaletteOpen && (
@@ -455,11 +610,11 @@ export default function App() {
               initial={{ scale: 0.95, y: -20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: -20 }}
-              className="w-full max-w-xl bg-[#121214] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+              className="w-full max-w-xl bg-bg-secondary border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-              <div className="flex items-center px-4 border-b border-white/5">
-                <Terminal className="w-5 h-5 text-zinc-500 mr-3" />
+              <div className="flex items-center px-4 border-b border-border-custom">
+                <Terminal className="w-5 h-5 text-text-secondary mr-3" />
                 <input 
                   autoFocus
                   placeholder="Search commands... (Esc to close)"
@@ -475,7 +630,7 @@ export default function App() {
                     onClick={() => { cmd.action(); setIsPaletteOpen(false); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group"
                   >
-                    <cmd.icon className="w-4 h-4 text-zinc-500 group-hover:text-emerald-400" />
+                    <cmd.icon className="w-4 h-4 text-text-secondary group-hover:text-accent" />
                     <span className="text-sm">{cmd.name}</span>
                     <ChevronRight className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-40" />
                   </button>
@@ -487,9 +642,9 @@ export default function App() {
       </AnimatePresence>
 
       {/* Sidebar - Navigation */}
-      <aside className="w-16 border-r border-white/5 flex flex-col items-center py-6 gap-8 bg-[#0D0D0E] z-30">
-        <div className="p-2 bg-emerald-500/10 rounded-xl">
-          <Code2 className="w-6 h-6 text-emerald-400" />
+      <aside className="w-16 border-r border-border-custom flex flex-col items-center py-6 gap-8 bg-bg-secondary z-30">
+        <div className="p-2 bg-accent/10 rounded-xl">
+          <Code2 className="w-6 h-6 text-accent" />
         </div>
         <nav className="flex flex-col gap-6">
           <button 
@@ -523,6 +678,20 @@ export default function App() {
           >
             <Volume2 className="w-5 h-5" />
           </button>
+          <button 
+            onClick={() => setIsThemePanelOpen(!isThemePanelOpen)}
+            className={cn("p-2 rounded-lg transition-colors", isThemePanelOpen ? "bg-white/10 text-white" : "hover:bg-white/5")}
+            title="Theme Customization"
+          >
+            <Palette className="w-5 h-5" />
+          </button>
+          <button 
+            onClick={() => setIsSourceControlOpen(!isSourceControlOpen)}
+            className={cn("p-2 rounded-lg transition-colors", isSourceControlOpen ? "bg-white/10 text-white" : "hover:bg-white/5")}
+            title="Source Control"
+          >
+            <GitBranch className="w-5 h-5" />
+          </button>
         </nav>
         <div className="mt-auto flex flex-col gap-6">
           <button 
@@ -534,6 +703,199 @@ export default function App() {
         </div>
       </aside>
 
+      {/* Source Control Panel */}
+      <AnimatePresence>
+        {isSourceControlOpen && (
+          <motion.section 
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 300, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            className="border-r border-border-custom bg-bg-secondary flex flex-col overflow-hidden"
+          >
+            <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
+              <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Source Control</span>
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleGitPush}
+                  className="p-1 hover:bg-white/5 rounded text-text-secondary hover:text-accent"
+                  title="Push to GitHub"
+                >
+                  <Share2 className="w-4 h-4" />
+                </button>
+                <button onClick={() => setIsSourceControlOpen(false)} className="p-1 hover:bg-white/5 rounded">
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              {!isGitInitialized ? (
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
+                  <GitBranch className="w-12 h-12 opacity-10" />
+                  <p className="text-xs opacity-50">This project is not yet a Git repository.</p>
+                  <button 
+                    onClick={() => setIsGitInitialized(true)}
+                    className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 transition-all"
+                  >
+                    Initialize Repository
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Commit Section */}
+                  <div className="space-y-3">
+                    <textarea 
+                      value={commitMessage}
+                      onChange={(e) => setCommitMessage(e.target.value)}
+                      placeholder="Commit message..."
+                      className="w-full h-24 bg-white/5 border border-white/10 rounded-lg p-2 text-xs focus:ring-1 focus:ring-accent resize-none"
+                    />
+                    <button 
+                      onClick={handleGitCommit}
+                      disabled={!commitMessage.trim() || stagedFiles.size === 0}
+                      className="w-full py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+                    >
+                      <GitCommit className="w-4 h-4" />
+                      Commit
+                    </button>
+                  </div>
+
+                  {/* Changes Section */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">Changes ({files.length})</label>
+                      <button 
+                        onClick={() => {
+                          if (stagedFiles.size === files.length) setStagedFiles(new Set());
+                          else setStagedFiles(new Set(files.map(f => f.id)));
+                        }}
+                        className="text-[10px] text-accent hover:underline"
+                      >
+                        {stagedFiles.size === files.length ? 'Unstage All' : 'Stage All'}
+                      </button>
+                    </div>
+                    <div className="space-y-1">
+                      {files.map(file => (
+                        <div key={file.id} className="group flex items-center justify-between p-2 rounded hover:bg-white/5 transition-colors">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <FileCode className="w-3.5 h-3.5 opacity-40 shrink-0" />
+                            <span className="text-xs truncate">{file.name}</span>
+                          </div>
+                          <button 
+                            onClick={() => toggleStageFile(file.id)}
+                            className={cn(
+                              "p-1 rounded transition-colors",
+                              stagedFiles.has(file.id) ? "text-accent bg-accent/10" : "text-zinc-600 hover:text-zinc-400"
+                            )}
+                          >
+                            {stagedFiles.has(file.id) ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* History Section */}
+                  {commitHistory.length > 0 && (
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">Commit History</label>
+                      <div className="space-y-3">
+                        {commitHistory.map(commit => (
+                          <div key={commit.id} className="flex gap-3">
+                            <div className="mt-1">
+                              <div className="w-2 h-2 rounded-full bg-accent" />
+                              <div className="w-[1px] h-full bg-white/10 mx-auto mt-1" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium truncate">{commit.message}</p>
+                              <p className="text-[10px] opacity-40">{commit.date} • {commit.id}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {/* Theme Customization Panel */}
+      <AnimatePresence>
+        {isThemePanelOpen && (
+          <motion.section 
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 280, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            className="border-r border-border-custom bg-bg-secondary flex flex-col overflow-hidden"
+          >
+            <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
+              <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Themes</span>
+              <button onClick={() => setIsThemePanelOpen(false)} className="p-1 hover:bg-white/5 rounded">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              <div className="space-y-3">
+                <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">Presets</label>
+                <div className="grid grid-cols-1 gap-2">
+                  {THEMES.map(theme => (
+                    <button
+                      key={theme.id}
+                      onClick={() => setCurrentTheme(theme)}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2 rounded-lg border transition-all text-left",
+                        currentTheme.id === theme.id 
+                          ? "bg-accent/10 border-accent text-accent" 
+                          : "bg-white/5 border-transparent hover:border-white/10 text-zinc-400"
+                      )}
+                    >
+                      <div className="w-4 h-4 rounded-full" style={{ backgroundColor: theme.colors['--accent'] }} />
+                      <span className="text-xs font-medium">{theme.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-4 border-t border-white/5">
+                <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">Custom Colors</label>
+                <div className="space-y-3">
+                  {Object.entries(currentTheme.colors).map(([key, value]) => (
+                    <div key={key} className="flex items-center justify-between gap-4">
+                      <span className="text-[10px] font-mono opacity-60 truncate">
+                        {key.replace('--', '').replace('-', ' ')}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="color"
+                          value={value.startsWith('rgba') ? '#ffffff' : value}
+                          onChange={(e) => {
+                            const newColors = { ...currentTheme.colors, [key]: e.target.value };
+                            setCurrentTheme({ ...currentTheme, id: 'custom', name: 'Custom', colors: newColors });
+                          }}
+                          className="w-6 h-6 rounded cursor-pointer bg-transparent border-none p-0"
+                        />
+                        <input 
+                          type="text"
+                          value={value}
+                          onChange={(e) => {
+                            const newColors = { ...currentTheme.colors, [key]: e.target.value };
+                            setCurrentTheme({ ...currentTheme, id: 'custom', name: 'Custom', colors: newColors });
+                          }}
+                          className="bg-white/5 border-none text-[10px] font-mono w-20 p-1 rounded focus:ring-1 focus:ring-accent"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
       {/* File Explorer Panel */}
       <AnimatePresence>
         {isExplorerOpen && (
@@ -541,13 +903,13 @@ export default function App() {
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: 240, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="border-r border-white/5 bg-[#0D0D0E] flex flex-col overflow-hidden"
+            className="border-r border-border-custom bg-bg-secondary flex flex-col overflow-hidden"
           >
-            <div className="h-12 border-b border-white/5 flex items-center px-4 justify-between bg-[#0A0A0B]">
+            <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
               <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Explorer</span>
               <button 
                 onClick={createFile}
-                className="p-1 hover:bg-white/5 rounded text-zinc-400 hover:text-emerald-400 transition-colors"
+                className="p-1 hover:bg-white/5 rounded text-text-secondary hover:text-accent transition-colors"
                 title="New File"
               >
                 <FilePlus className="w-4 h-4" />
@@ -559,7 +921,7 @@ export default function App() {
                   key={file.id}
                   className={cn(
                     "group flex items-center px-4 py-1.5 cursor-pointer transition-colors relative",
-                    activeFileId === file.id ? "bg-emerald-500/10 text-emerald-400" : "hover:bg-white/5 text-zinc-400"
+                    activeFileId === file.id ? "bg-accent/10 text-accent" : "hover:bg-white/5 text-text-secondary"
                   )}
                   onClick={() => setActiveFileId(file.id)}
                 >
@@ -584,9 +946,9 @@ export default function App() {
       </AnimatePresence>
 
       {/* Left Side - Preview (As requested by user) */}
-      <section className="w-1/3 border-r border-white/5 flex flex-col bg-[#0D0D0E]">
-        <div className="h-12 border-b border-white/5 flex items-center px-4 justify-between bg-[#0A0A0B]">
-          <span className="text-xs font-mono uppercase tracking-widest opacity-50">Live Preview</span>
+      <section className="w-1/3 border-r border-border-custom flex flex-col bg-bg-secondary">
+        <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
+          <span className="text-xs font-mono uppercase tracking-widest opacity-50 text-text-secondary">Live Preview</span>
           <div className="flex gap-2">
             <div className="w-2 h-2 rounded-full bg-red-500/50" />
             <div className="w-2 h-2 rounded-full bg-yellow-500/50" />
@@ -602,7 +964,7 @@ export default function App() {
               sandbox="allow-scripts"
             />
           ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 bg-[#0D0D0E]">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-text-secondary bg-bg-secondary">
               <Layout className="w-12 h-12 mb-4 opacity-20" />
               <p className="text-sm font-medium opacity-40">No preview available</p>
               <p className="text-xs opacity-30 mt-1">Generate HTML/CSS to see it here</p>
@@ -614,7 +976,7 @@ export default function App() {
       {/* Main Content - Editor & AI */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="h-16 border-b border-white/5 flex items-center px-6 justify-between bg-[#0D0D0E]">
+        <header className="h-16 border-b border-border-custom flex items-center px-6 justify-between bg-bg-secondary">
           <div className="flex items-center gap-4">
             <div className="flex bg-white/5 rounded-lg p-1 border border-white/10">
               {files.map(file => (
@@ -623,7 +985,7 @@ export default function App() {
                   onClick={() => setActiveFileId(file.id)}
                   className={cn(
                     "px-3 py-1.5 rounded-md text-xs font-mono transition-all flex items-center gap-2",
-                    activeFileId === file.id ? "bg-emerald-500 text-black font-bold" : "hover:bg-white/5 text-zinc-400"
+                    activeFileId === file.id ? "bg-accent text-accent-foreground font-bold" : "hover:bg-white/5 text-text-secondary"
                   )}
                 >
                   <Code2 className="w-3 h-3" />
@@ -635,10 +997,10 @@ export default function App() {
             <select 
               value={activeFile.language}
               onChange={(e) => updateFile(activeFileId, { language: e.target.value })}
-              className="bg-transparent text-xs font-mono border-none focus:ring-0 cursor-pointer hover:text-white transition-colors"
+              className="bg-transparent text-xs font-mono border-none focus:ring-0 cursor-pointer hover:text-text-primary transition-colors"
             >
               {LANGUAGES.map(lang => (
-                <option key={lang.id} value={lang.id} className="bg-[#0D0D0E]">{lang.name}</option>
+                <option key={lang.id} value={lang.id} className="bg-bg-secondary">{lang.name}</option>
               ))}
             </select>
             <div className="h-6 w-[1px] bg-white/10" />
@@ -659,7 +1021,7 @@ export default function App() {
               onClick={() => setUseThinking(!useThinking)}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all",
-                useThinking ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" : "bg-white/5 text-zinc-500 border border-transparent"
+                useThinking ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" : "bg-white/5 text-text-secondary border border-transparent"
               )}
             >
               <Brain className="w-3.5 h-3.5" />
@@ -667,14 +1029,14 @@ export default function App() {
             </button>
             <button 
               onClick={handleShare}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white/5 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white/5 transition-colors text-text-secondary"
             >
               <Share2 className="w-3.5 h-3.5" />
               Share
             </button>
             <button 
               onClick={handleRun}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-black hover:bg-emerald-400 transition-colors"
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               Run Project
@@ -689,14 +1051,14 @@ export default function App() {
               key={file.id} 
               className={cn(
                 "relative transition-all duration-300 flex flex-col",
-                activeFileId === file.id ? "ring-1 ring-emerald-500/50 z-10" : "opacity-80 hover:opacity-100"
+                activeFileId === file.id ? "ring-1 ring-accent/50 z-10" : "opacity-80 hover:opacity-100"
               )}
               onClick={() => setActiveFileId(file.id)}
             >
-              <div className="h-8 bg-[#0D0D0E] border-b border-white/5 flex items-center px-3 justify-between z-20 shrink-0">
+              <div className="h-8 bg-bg-secondary border-b border-border-custom flex items-center px-3 justify-between z-20 shrink-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Box {idx + 1}</span>
-                  <span className="text-[10px] font-mono text-emerald-400/70 truncate max-w-[100px]">{file.name}</span>
+                  <span className="text-[10px] font-mono text-text-secondary uppercase tracking-widest">Box {idx + 1}</span>
+                  <span className="text-[10px] font-mono text-accent/70 truncate max-w-[100px]">{file.name}</span>
                 </div>
                 <select 
                   value={file.language}
@@ -704,7 +1066,7 @@ export default function App() {
                   className="bg-transparent text-[9px] font-mono border-none focus:ring-0 cursor-pointer opacity-50 hover:opacity-100"
                 >
                   {LANGUAGES.map(lang => (
-                    <option key={lang.id} value={lang.id} className="bg-[#0D0D0E]">{lang.name}</option>
+                    <option key={lang.id} value={lang.id} className="bg-bg-secondary">{lang.name}</option>
                   ))}
                 </select>
               </div>
@@ -712,7 +1074,7 @@ export default function App() {
                 <Editor
                   height="100%"
                   language={file.language}
-                  theme="vs-dark"
+                  theme="nexus-theme"
                   value={file.code}
                   onChange={(val) => updateFile(file.id, { code: val || '' })}
                   options={{
@@ -732,26 +1094,26 @@ export default function App() {
             </div>
           ))}
           {files.length < 3 && Array.from({ length: 3 - files.length }).map((_, i) => (
-            <div key={`empty-${i}`} className="bg-[#0D0D0E] flex items-center justify-center text-zinc-700 italic text-xs">
+            <div key={`empty-${i}`} className="bg-bg-secondary flex items-center justify-center text-text-secondary italic text-xs">
               Empty Slot
             </div>
           ))}
         </div>
 
         {/* Bottom Panel - AI & Prompt */}
-        <footer className="h-80 border-t border-white/5 flex flex-col bg-[#0D0D0E]">
-          <div className="flex border-b border-white/5">
+        <footer className="h-80 border-t border-border-custom flex flex-col bg-bg-secondary">
+          <div className="flex border-b border-border-custom">
             {['ai', 'chat', 'live', 'editor'].map((tab) => (
               <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 className={cn(
                   "px-6 py-2 text-[10px] font-mono uppercase tracking-widest transition-colors relative",
-                  activeTab === tab ? "text-emerald-400" : "opacity-40 hover:opacity-100"
+                  activeTab === tab ? "text-accent" : "opacity-40 hover:opacity-100"
                 )}
               >
                 {tab === 'ai' ? 'AI Assistant' : tab === 'live' ? 'Live AI' : tab}
-                {activeTab === tab && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-[2px] bg-emerald-400" />}
+                {activeTab === tab && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />}
               </button>
             ))}
           </div>
@@ -769,7 +1131,7 @@ export default function App() {
                     className="prose prose-invert prose-sm max-w-none"
                   >
                     {isGenerating || isDebugging ? (
-                      <div className="flex items-center gap-3 text-emerald-400">
+                      <div className="flex items-center gap-3 text-accent">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span>Nexus AI is processing...</span>
                       </div>
@@ -817,7 +1179,7 @@ export default function App() {
                         <div key={i} className={cn("flex gap-3", msg.role === 'user' ? "justify-end" : "justify-start")}>
                           <div className={cn(
                             "max-w-[80%] p-3 rounded-2xl text-xs leading-relaxed",
-                            msg.role === 'user' ? "bg-emerald-500 text-black rounded-tr-none" : "bg-white/5 text-zinc-300 rounded-tl-none border border-white/5"
+                            msg.role === 'user' ? "bg-accent text-accent-foreground rounded-tr-none" : "bg-white/5 text-text-secondary rounded-tl-none border border-border-custom"
                           )}>
                             <div className="flex items-center gap-2 mb-1 opacity-50 font-bold uppercase tracking-tighter text-[9px]">
                               {msg.role === 'user' ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
@@ -857,11 +1219,11 @@ export default function App() {
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}
                         placeholder="Ask anything about coding..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs focus:ring-0 focus:border-emerald-500 transition-all"
+                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs focus:ring-0 focus:border-accent transition-all"
                       />
                       <button 
                         onClick={handleChatSend}
-                        className="p-2 bg-emerald-500 text-black rounded-xl hover:bg-emerald-400 transition-colors"
+                        className="p-2 bg-accent text-accent-foreground rounded-xl hover:opacity-90 transition-colors"
                       >
                         <Send className="w-4 h-4" />
                       </button>
@@ -879,15 +1241,15 @@ export default function App() {
                     <div className="relative">
                       <div className={cn(
                         "w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500",
-                        isLiveActive ? "bg-emerald-500/20 scale-110 shadow-[0_0_50px_rgba(16,185,129,0.2)]" : "bg-white/5"
+                        isLiveActive ? "bg-accent/20 scale-110 shadow-[0_0_50px_var(--accent)]" : "bg-white/5"
                       )}>
-                        <Volume2 className={cn("w-10 h-10", isLiveActive ? "text-emerald-400 animate-pulse" : "text-zinc-600")} />
+                        <Volume2 className={cn("w-10 h-10", isLiveActive ? "text-accent animate-pulse" : "text-text-secondary")} />
                       </div>
                       {isLiveActive && (
                         <motion.div 
                           animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
                           transition={{ duration: 2, repeat: Infinity }}
-                          className="absolute inset-0 border-2 border-emerald-500 rounded-full"
+                          className="absolute inset-0 border-2 border-accent rounded-full"
                         />
                       )}
                     </div>
@@ -901,7 +1263,7 @@ export default function App() {
                       onClick={startLiveMode}
                       className={cn(
                         "px-8 py-3 rounded-full text-xs font-bold transition-all flex items-center gap-2",
-                        isLiveActive ? "bg-red-500 text-white hover:bg-red-600" : "bg-emerald-500 text-black hover:bg-emerald-400"
+                        isLiveActive ? "bg-red-500 text-white hover:bg-red-600" : "bg-accent text-accent-foreground hover:opacity-90"
                       )}
                     >
                       {isLiveActive ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
@@ -916,10 +1278,10 @@ export default function App() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="text-zinc-500"
+                    className="text-text-secondary"
                   >
                     <div className="flex gap-2 mb-1">
-                      <span className="text-emerald-500">[system]</span>
+                      <span className="text-accent">[system]</span>
                       <span>Nexus Forge initialized.</span>
                     </div>
                     <div className="flex gap-2">
@@ -932,11 +1294,11 @@ export default function App() {
             </div>
 
             {/* Prompt Input */}
-            <div className="w-96 border-l border-white/5 p-4 flex flex-col gap-3 bg-[#0A0A0B]">
+            <div className="w-96 border-l border-border-custom p-4 flex flex-col gap-3 bg-bg-primary">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase tracking-tighter opacity-40">Command Center</span>
                 <div className="flex gap-1">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", isListening ? "bg-red-500 animate-pulse" : "bg-zinc-700")} />
+                  <div className={cn("w-1.5 h-1.5 rounded-full", isListening ? "bg-red-500 animate-pulse" : "bg-text-secondary/30")} />
                 </div>
               </div>
               <div className="relative flex-1">
@@ -944,13 +1306,13 @@ export default function App() {
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Describe what to build or fix..."
-                  className="w-full h-full bg-white/5 rounded-xl p-3 text-sm border border-white/10 focus:border-emerald-500/50 focus:ring-0 resize-none transition-all placeholder:opacity-20"
+                  className="w-full h-full bg-white/5 rounded-xl p-3 text-sm border border-white/10 focus:border-accent/50 focus:ring-0 resize-none transition-all placeholder:opacity-20"
                 />
                 <button 
                   onClick={toggleListening}
                   className={cn(
                     "absolute bottom-3 right-3 p-2 rounded-full transition-all",
-                    isListening ? "bg-red-500 text-white" : "bg-white/10 text-zinc-400 hover:bg-white/20"
+                    isListening ? "bg-red-500 text-white" : "bg-white/10 text-text-secondary hover:bg-white/20"
                   )}
                 >
                   {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -959,7 +1321,7 @@ export default function App() {
               <button 
                 onClick={handleGenerate}
                 disabled={isGenerating || !prompt}
-                className="w-full py-2 bg-emerald-500 text-black rounded-lg text-xs font-bold hover:bg-emerald-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 Execute Command

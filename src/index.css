@@ -3,11 +3,30 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border-custom: var(--border);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+}
+
+:root {
+  --bg-primary: #0A0A0B;
+  --bg-secondary: #0D0D0E;
+  --accent: #10b981;
+  --accent-foreground: #000000;
+  --border: rgba(255, 255, 255, 0.05);
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
 }
 
 @layer base {
   body {
-    @apply bg-[#0A0A0B] text-zinc-300 antialiased;
+    background-color: var(--bg-primary);
+    color: var(--text-secondary);
+    @apply antialiased;
   }
 
   /* Custom Scrollbar */
@@ -21,26 +40,33 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+    background-color: var(--border);
+    @apply rounded-full hover:bg-white/20 transition-colors;
   }
 }
 
 .prose pre {
-  @apply bg-[#0A0A0B] border border-white/5 rounded-lg p-4 my-4 overflow-x-auto;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border);
+  @apply rounded-lg p-4 my-4 overflow-x-auto;
 }
 
 .prose code {
-  @apply text-emerald-400 font-mono text-sm;
+  color: var(--accent);
+  @apply font-mono text-sm;
 }
 
 .prose p {
-  @apply text-zinc-400 leading-relaxed mb-4;
+  color: var(--text-secondary);
+  @apply leading-relaxed mb-4;
 }
 
 .prose h1, .prose h2, .prose h3 {
-  @apply text-white font-semibold mb-4 mt-6;
+  color: var(--text-primary);
+  @apply font-semibold mb-4 mt-6;
 }
 
 .prose ul {
-  @apply list-disc list-inside mb-4 text-zinc-400;
+  color: var(--text-secondary);
+  @apply list-disc list-inside mb-4;
 }
