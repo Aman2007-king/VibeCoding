@@ -131,7 +131,7 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, type: "spring", stiffness: 100 }}
-              className="text-7xl md:text-[10rem] font-black tracking-tighter leading-[0.8] uppercase italic"
+              className="text-4xl md:text-7xl lg:text-[10rem] font-black tracking-tighter leading-[0.8] uppercase italic"
             >
               The Machine <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent via-blue-400 to-purple-500">That Codes.</span>
@@ -142,7 +142,7 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="text-xl text-text-secondary max-w-3xl mx-auto font-medium leading-relaxed opacity-80"
+            className="text-sm md:text-xl text-text-secondary max-w-3xl mx-auto font-medium leading-relaxed opacity-80"
           >
             Nexus Forge is a high-performance, AI-driven integrated development environment. It leverages massive neural networks to transform your ideas into production-ready software at the speed of thought.
           </motion.p>
@@ -151,18 +151,18 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="flex flex-wrap items-center justify-center gap-8 pt-8"
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 pt-8"
           >
             <button 
               onClick={onBack}
-              className="group relative px-12 py-5 bg-accent text-accent-foreground rounded-2xl font-black uppercase tracking-widest overflow-hidden transition-all hover:scale-105 active:scale-95 shadow-[0_0_50px_rgba(var(--accent-rgb),0.4)]"
+              className="w-full sm:w-auto group relative px-8 md:px-12 py-4 md:py-5 bg-accent text-accent-foreground rounded-2xl font-black uppercase tracking-widest overflow-hidden transition-all hover:scale-105 active:scale-95 shadow-[0_0_50px_rgba(var(--accent-rgb),0.4)]"
             >
               <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500 skew-x-12" />
               <span className="relative z-10">Enter Workspace</span>
             </button>
             <button 
               onClick={onNavigateAbout}
-              className="px-12 py-5 bg-white/5 border border-white/10 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-white/10 transition-all backdrop-blur-md"
+              className="w-full sm:w-auto px-8 md:px-12 py-4 md:py-5 bg-white/5 border border-white/10 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-white/10 transition-all backdrop-blur-md"
             >
               About Us
             </button>
@@ -377,8 +377,8 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
       </section>
 
       {/* Deployment Guide Section */}
-      <section className="max-w-7xl mx-auto px-6 py-40">
-        <div className="bg-gradient-to-br from-accent/10 via-bg-secondary to-purple-500/10 border border-white/10 rounded-[5rem] p-12 md:p-24 space-y-20 relative overflow-hidden">
+      <section className="max-w-7xl mx-auto px-6 py-20 md:py-40">
+        <div className="bg-gradient-to-br from-accent/10 via-bg-secondary to-purple-500/10 border border-white/10 rounded-[3rem] md:rounded-[5rem] p-8 md:p-24 space-y-12 md:space-y-20 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-96 h-96 bg-accent/10 blur-[150px] rounded-full" />
           
           <div className="text-center space-y-6 relative z-10">

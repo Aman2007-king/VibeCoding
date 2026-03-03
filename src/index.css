@@ -43,6 +43,32 @@
     background-color: var(--border);
     @apply rounded-full hover:bg-white/20 transition-colors;
   }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
 }
 
 .prose pre {
@@ -75,6 +101,14 @@
   perspective: 1000px;
 }
 
+.glass-panel {
+  @apply bg-bg-secondary/80 backdrop-blur-xl border border-white/10;
+}
+
+.glass-sidebar {
+  @apply bg-bg-secondary/90 backdrop-blur-2xl border-r border-white/5;
+}
+
 @keyframes shimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
@@ -82,4 +116,19 @@
 
 .animate-shimmer {
   animation: shimmer 2s infinite;
+}
+
+.breakpoint-glyph {
+  background: #ef4444;
+  border-radius: 50%;
+  width: 10px !important;
+  height: 10px !important;
+  margin-left: 5px;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.paused-line-decoration {
+  background: rgba(16, 185, 129, 0.2);
+  border-left: 3px solid #10b981;
 }

@@ -28,24 +28,24 @@ export default function About({ onBack }: { onBack: () => void }) {
           <motion.h1 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="text-6xl md:text-8xl font-black tracking-tighter uppercase"
+            className="text-4xl md:text-8xl font-black tracking-tighter uppercase"
           >
             About <span className="text-accent">Us.</span>
           </motion.h1>
-          <p className="text-text-secondary max-w-2xl mx-auto text-lg font-medium">
+          <p className="text-text-secondary max-w-2xl mx-auto text-sm md:text-lg font-medium">
             We are a collective of engineers and designers dedicated to pushing the boundaries of human-machine collaboration.
           </p>
         </div>
       </section>
 
       {/* Mission & Vision */}
-      <section className="max-w-7xl mx-auto px-6 py-24 grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
+      <section className="max-w-7xl mx-auto px-6 py-12 md:py-24 grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-20 items-center">
         <div className="space-y-8">
           <div className="space-y-4">
             <h2 className="text-sm font-black text-accent uppercase tracking-[0.3em]">Our Mission</h2>
-            <h3 className="text-4xl font-black tracking-tight uppercase">Democratizing Intelligence.</h3>
+            <h3 className="text-3xl md:text-4xl font-black tracking-tight uppercase">Democratizing Intelligence.</h3>
           </div>
-          <p className="text-text-secondary leading-relaxed text-lg">
+          <p className="text-text-secondary leading-relaxed text-base md:text-lg">
             Nexus Forge was born from a simple idea: that coding should be as intuitive as speaking. We've built a platform that doesn't just "help" you code, but understands your vision and helps you manifest it into reality.
           </p>
           <div className="grid grid-cols-2 gap-8">
@@ -72,11 +72,11 @@ export default function About({ onBack }: { onBack: () => void }) {
       </section>
 
       {/* Contact Section */}
-      <section className="bg-bg-secondary py-32">
-        <div className="max-w-4xl mx-auto px-6 text-center space-y-16">
+      <section className="bg-bg-secondary py-20 md:32">
+        <div className="max-w-4xl mx-auto px-6 text-center space-y-12 md:space-y-16">
           <div className="space-y-4">
             <h2 className="text-sm font-black text-accent uppercase tracking-[0.3em]">Get In Touch</h2>
-            <h3 className="text-4xl md:text-6xl font-black tracking-tight uppercase">Let's Build Together.</h3>
+            <h3 className="text-3xl md:text-6xl font-black tracking-tight uppercase">Let's Build Together.</h3>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">

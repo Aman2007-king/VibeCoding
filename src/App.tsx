@@ -13,6 +13,8 @@ import {
   Layers, 
   Sparkles,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Loader2,
   RefreshCw,
   Layout,
@@ -38,18 +40,18 @@ import {
   GitMerge,
   History,
   Check,
-  Plus
+  Plus,
+  ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import confetti from 'canvas-confetti';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream } from './services/geminiService';
+import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject } from './services/geminiService';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import Login from './components/Login';
 import Blog from './components/Blog';
 import About from './components/About';
 import { BookOpen, Key } from 'lucide-react';
@@ -211,10 +213,17 @@ export default function App() {
   const [transcript, setTranscript] = useState('');
   const [githubToken, setGithubToken] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState('');
-  const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live'>('editor');
+  const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live' | 'command' | 'debugger'>('editor');
   const [prompt, setPrompt] = useState('');
   const [useThinking, setUseThinking] = useState(false);
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model', parts: { text: string }[] }[]>([]);
+  const [breakpoints, setBreakpoints] = useState<Record<number, number[]>>({});
+  const [debuggerStatus, setDebuggerStatus] = useState<'idle' | 'running' | 'paused'>('idle');
+  const [pausedLine, setPausedLine] = useState<{ fileId: number, line: number } | null>(null);
+  const [inspectedVariables, setInspectedVariables] = useState<Record<string, any>>({});
+  const editorRefs = useRef<Record<number, any>>({});
+  const monacoRef = useRef<any>(null);
+  const [isProjectMode, setIsProjectMode] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [liveTranscription, setLiveTranscription] = useState<string[]>([]);
@@ -230,7 +239,7 @@ export default function App() {
   const [commitMessage, setCommitMessage] = useState('');
   const [isGitInitialized, setIsGitInitialized] = useState(false);
   const [commitHistory, setCommitHistory] = useState<{ id: string, message: string, date: string }[]>([]);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>({ name: 'Developer' });
   const [view, setView] = useState<'ide' | 'blog' | 'about'>('ide');
   const [userApiKey, setUserApiKey] = useState('');
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
@@ -279,7 +288,9 @@ export default function App() {
       recognitionRef.current.onresult = (event: any) => {
         const text = event.results[0][0].transcript;
         setTranscript(text);
-        handleVoiceCommand(text);
+        handleVoiceCommand(text).then(() => {
+          setTimeout(() => setTranscript(''), 3000);
+        });
       };
 
       recognitionRef.current.onend = () => {
@@ -345,6 +356,30 @@ export default function App() {
         const generated = await generateCode(command.description, command.suggestedLanguage, useThinking, userApiKey);
         // For multi-file, we'll just update the active file for now
         updateFile(activeFileId, { code: generated, language: command.suggestedLanguage });
+      } else if (command.intent === 'fix') {
+        await handleFastFix();
+      } else if (command.intent === 'run') {
+        handleRun();
+        setAiResponse('Debugger and Preview started.');
+      } else if (command.intent === 'save') {
+        // In this IDE, files are auto-saved in state, but we can show a confirmation
+        setAiResponse('Project state saved to local workspace.');
+        confetti({ particleCount: 20, spread: 40 });
+      } else if (command.intent === 'open') {
+        const fileName = command.description.toLowerCase();
+        const fileToOpen = files.find(f => f.name.toLowerCase().includes(fileName));
+        if (fileToOpen) {
+          setActiveFileId(fileToOpen.id);
+          setIsExplorerOpen(true);
+          setAiResponse(`Opened file: ${fileToOpen.name}`);
+        } else {
+          setAiResponse(`Could not find file: ${command.description}`);
+        }
+      } else if (command.intent === 'search') {
+        setGlobalSearchQuery(command.description);
+        setIsSearchOpen(true);
+        setIsExplorerOpen(false);
+        setAiResponse(`Searching for: ${command.description}`);
       }
     } catch (error) {
       console.error(error);
@@ -370,15 +405,42 @@ export default function App() {
     setActiveTab('ai');
     setAiResponse('Nexus AI is thinking...');
     try {
-      const generated = await generateCodeStream(prompt, activeFile.language, useThinking, (text) => {
-        setAiResponse(text);
-      }, userApiKey);
+      if (isProjectMode) {
+        setAiResponse('Generating full project structure...');
+        const project = await generateProject(prompt, files, useThinking, userApiKey);
+        
+        // Update existing files and create new ones
+        const newFiles = [...files];
+        project.files.forEach((aiFile: any) => {
+          const existingIdx = newFiles.findIndex(f => f.name === aiFile.name);
+          if (existingIdx !== -1) {
+            newFiles[existingIdx] = { ...newFiles[existingIdx], code: aiFile.code, language: aiFile.language };
+          } else {
+            const newId = Math.max(...newFiles.map(f => f.id), 0) + 1;
+            newFiles.push({
+              id: newId,
+              name: aiFile.name,
+              code: aiFile.code,
+              language: aiFile.language
+            });
+          }
+        });
+        
+        setFiles(newFiles);
+        setAiResponse(`Project generated successfully! Created/Updated ${project.files.length} files.`);
+        handleRun();
+      } else {
+        const generated = await generateCodeStream(prompt, activeFile.language, useThinking, (text) => {
+          setAiResponse(text);
+        }, userApiKey);
+        
+        // Strip markdown code blocks if present
+        const cleanCode = generated.replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
+        
+        updateFile(activeFileId, { code: cleanCode });
+        handleRun();
+      }
       
-      // Strip markdown code blocks if present
-      const cleanCode = generated.replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
-      
-      updateFile(activeFileId, { code: cleanCode });
-      handleRun();
       confetti({
         particleCount: 50,
         spread: 60,
@@ -625,6 +687,56 @@ export default function App() {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
   }, []);
 
+  const toggleBreakpoint = useCallback((fileId: number, line: number) => {
+    setBreakpoints(prev => {
+      const current = prev[fileId] || [];
+      const next = current.includes(line) 
+        ? current.filter(l => l !== line) 
+        : [...current, line];
+      
+      const editor = editorRefs.current[fileId];
+      if (editor && monacoRef.current) {
+        const decorations = next.map(l => ({
+          range: new monacoRef.current.Range(l, 1, l, 1),
+          options: {
+            isWholeLine: true,
+            glyphMarginClassName: 'breakpoint-glyph',
+            glyphMarginHoverMessage: { value: 'Breakpoint' }
+          }
+        }));
+        
+        editor.breakpointDecorations = editor.deltaDecorations(editor.breakpointDecorations || [], decorations);
+      }
+      
+      return { ...prev, [fileId]: next };
+    });
+  }, [breakpoints]);
+
+  const handleEditorMount = useCallback((editor: any, monaco: any, fileId: number) => {
+    editorRefs.current[fileId] = editor;
+    monacoRef.current = monaco;
+
+    editor.onMouseDown((e: any) => {
+      if (e.target.type === 2) { // Glyph margin
+        const line = e.target.position.lineNumber;
+        toggleBreakpoint(fileId, line);
+      }
+    });
+
+    const currentBreakpoints = breakpoints[fileId] || [];
+    if (currentBreakpoints.length > 0) {
+      const decorations = currentBreakpoints.map(l => ({
+        range: new monaco.Range(l, 1, l, 1),
+        options: {
+          isWholeLine: true,
+          glyphMarginClassName: 'breakpoint-glyph',
+          glyphMarginHoverMessage: { value: 'Breakpoint' }
+        }
+      }));
+      editor.breakpointDecorations = editor.deltaDecorations([], decorations);
+    }
+  }, [breakpoints, toggleBreakpoint]);
+
   const createFile = useCallback(() => {
     setFiles(prev => {
       const newId = Math.max(...prev.map(f => f.id), 0) + 1;
@@ -655,9 +767,29 @@ export default function App() {
   }, []);
 
   const handleRun = useCallback(() => {
-    const htmlFile = files.find(f => f.name === 'index.html')?.code || '';
-    const cssFile = files.find(f => f.name === 'styles.css')?.code || '';
-    const jsFile = files.find(f => f.name === 'script.js')?.code || '';
+    const htmlFileObj = files.find(f => f.name.toLowerCase() === 'index.html') || files.find(f => f.language === 'html');
+    const htmlCode = htmlFileObj?.code || '';
+    
+    const cssCode = files
+      .filter(f => f.language === 'css' || f.name.toLowerCase().endsWith('.css'))
+      .map(f => f.code)
+      .join('\n');
+      
+    const jsFiles = files.filter(f => 
+      ['javascript', 'typescript'].includes(f.language) || 
+      f.name.toLowerCase().endsWith('.js') || 
+      f.name.toLowerCase().endsWith('.ts')
+    );
+
+    const instrumentedJs = jsFiles.map(file => {
+      const lines = file.code.split('\n');
+      const instrumentedLines = lines.map((line, idx) => {
+        const lineNum = idx + 1;
+        if (!line.trim() || line.trim().startsWith('//')) return line;
+        return `await window.parent.nexusDebugger.sync(${file.id}, ${lineNum}, typeof window !== 'undefined' ? window : {}); ${line}`;
+      });
+      return `/* File: ${file.name} */\n(async () => {\n  try {\n    ${instrumentedLines.join('\n')}\n  } catch (e) {\n    console.error('Debugger Error in ${file.name}:', e);\n  }\n})();`;
+    }).join('\n\n');
 
     const combined = `
       <!DOCTYPE html>
@@ -666,31 +798,123 @@ export default function App() {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <style>
-            ${cssFile}
+            ${cssCode}
           </style>
+          <script>
+            // Debugger bridge
+            window.nexusDebugger = {
+              sync: async (fileId, line, scope) => {
+                window.parent.postMessage({ type: 'DEBUGGER_SYNC', fileId, line, scope }, '*');
+                return new Promise(resolve => {
+                  window.addEventListener('message', function handler(e) {
+                    if (e.data.type === 'DEBUGGER_CONTINUE') {
+                      window.removeEventListener('message', handler);
+                      resolve();
+                    }
+                  });
+                });
+              }
+            };
+          </script>
         </head>
         <body>
-          ${htmlFile}
+          ${htmlCode}
           <script>
-            ${jsFile}
+            ${instrumentedJs}
           </script>
         </body>
       </html>
     `;
     
     setPreviewContent(combined);
+    setDebuggerStatus('running');
+    setPausedLine(null);
+    setInspectedVariables({});
+    
     confetti({
       particleCount: 40,
       spread: 70,
       origin: { y: 0.8 }
     });
-  }, [files]);
+  }, [files, breakpoints]);
+
+  const [stepping, setStepping] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      handleRun();
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data.type === 'DEBUGGER_SYNC') {
+        const { fileId, line, scope } = e.data;
+        const fileBreakpoints = breakpoints[fileId] || [];
+        
+        // Pause if breakpoint hit OR if we are currently stepping
+        if (fileBreakpoints.includes(line) || stepping) {
+          setDebuggerStatus('paused');
+          setPausedLine({ fileId, line });
+          setInspectedVariables(scope);
+          setActiveFileId(fileId);
+          setActiveTab('debugger');
+          setStepping(false); // Reset stepping after pause
+          
+          // Highlight the paused line in the editor
+          const editor = editorRefs.current[fileId];
+          if (editor && monacoRef.current) {
+            const decorations = [{
+              range: new monacoRef.current.Range(line, 1, line, 1),
+              options: {
+                isWholeLine: true,
+                className: 'paused-line-decoration',
+                glyphMarginClassName: 'paused-line-glyph'
+              }
+            }];
+            editor.pausedDecorations = editor.deltaDecorations(editor.pausedDecorations || [], decorations);
+            editor.revealLineInCenter(line);
+          }
+        } else {
+          // Not paused, continue execution automatically
+          const iframe = document.querySelector('iframe');
+          if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
+          }
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [breakpoints, stepping]);
+
+  const handleContinue = () => {
+    const iframe = document.querySelector('iframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
+      setDebuggerStatus('running');
+      setStepping(false);
+      
+      if (pausedLine) {
+        const editor = editorRefs.current[pausedLine.fileId];
+        if (editor) {
+          editor.pausedDecorations = editor.deltaDecorations(editor.pausedDecorations || [], []);
+        }
+      }
+      setPausedLine(null);
     }
-  }, [user, handleRun]);
+  };
+
+  const handleStep = () => {
+    setStepping(true);
+    const iframe = document.querySelector('iframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
+      setDebuggerStatus('running');
+      
+      if (pausedLine) {
+        const editor = editorRefs.current[pausedLine.fileId];
+        if (editor) {
+          editor.pausedDecorations = editor.deltaDecorations(editor.pausedDecorations || [], []);
+        }
+      }
+      setPausedLine(null);
+    }
+  };
 
   const COMMANDS = [
     { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setPrompt('Build a modern landing page'); handleGenerate(); } },
@@ -712,6 +936,8 @@ export default function App() {
     cmd.name.toLowerCase().includes(paletteSearch.toLowerCase())
   ), [paletteSearch, handleGenerate, handleDebug, handleFastFix, handleShare]);
 
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   const searchResults = useMemo(() => {
     if (!globalSearchQuery.trim()) return [];
     const results: { fileId: number, fileName: string, line: number, text: string }[] = [];
@@ -731,9 +957,7 @@ export default function App() {
     return results;
   }, [files, globalSearchQuery]);
 
-  if (!user) {
-    return <Login onLogin={setUser} />;
-  }
+  // Removed login check
 
   if (view === 'blog') {
     return <Blog onBack={() => setView('ide')} onNavigateAbout={() => setView('about')} />;
@@ -744,7 +968,21 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-bg-primary text-text-secondary font-sans overflow-hidden relative">
+    <div className="flex h-screen w-full bg-bg-primary text-text-secondary font-sans overflow-hidden relative flex-col md:flex-row">
+      {/* Mobile Header */}
+      <header className="md:hidden h-14 border-b border-border-custom flex items-center px-4 justify-between bg-bg-secondary z-50">
+        <div className="flex items-center gap-2">
+          <Code2 className="w-5 h-5 text-accent" />
+          <span className="font-black tracking-tighter uppercase text-sm">Nexus Forge</span>
+        </div>
+        <button 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+        >
+          {isMobileMenuOpen ? <ChevronRight className="w-5 h-5 rotate-90" /> : <Layout className="w-5 h-5" />}
+        </button>
+      </header>
+
       {/* Command Palette */}
       <AnimatePresence>
         {isPaletteOpen && (
@@ -752,7 +990,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 z-50 flex items-start justify-center pt-32 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 z-50 flex items-start justify-center pt-10 md:pt-32 bg-black/60 backdrop-blur-sm p-4"
             onClick={() => setIsPaletteOpen(false)}
           >
             <motion.div 
@@ -790,10 +1028,36 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Mobile Menu Backdrop */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar - Navigation */}
-      <aside className="w-16 border-r border-border-custom flex flex-col items-center py-6 gap-8 bg-bg-secondary z-30">
-        <div className="p-2 bg-accent/10 rounded-xl">
-          <Code2 className="w-6 h-6 text-accent" />
+      <aside className={cn(
+        "w-16 flex-col items-center py-6 gap-8 z-30 transition-all duration-300 overflow-y-auto glass-sidebar",
+        "fixed md:relative inset-y-0 left-0 md:flex",
+        isMobileMenuOpen ? "flex translate-x-0 w-16 pt-20" : "-translate-x-full md:translate-x-0"
+      )}>
+        <div className="flex flex-col items-center gap-4 shrink-0">
+          <div className="p-2 bg-accent/10 rounded-xl hidden md:block">
+            <Code2 className="w-6 h-6 text-accent" />
+          </div>
+          <button 
+            onClick={handleRun}
+            className="p-2 rounded-lg bg-accent text-accent-foreground hover:opacity-90 transition-all shadow-lg shadow-accent/20"
+            title="Run Project"
+          >
+            <Play className="w-5 h-5 fill-current" />
+          </button>
         </div>
         <nav className="flex flex-col gap-6">
           <SidebarButton 
@@ -873,7 +1137,7 @@ export default function App() {
             title="API Key Settings" 
           />
         </nav>
-        <div className="mt-auto flex flex-col gap-6">
+        <div className="mt-auto flex flex-col gap-6 shrink-0">
           <SidebarButton 
             icon={Github} 
             active={!!githubToken} 
@@ -883,8 +1147,8 @@ export default function App() {
           />
           <SidebarButton 
             icon={Settings} 
-            onClick={() => setUser(null)} 
-            title="Logout" 
+            onClick={() => setView('about')} 
+            title="Settings" 
             className="text-text-secondary"
           />
         </div>
@@ -921,21 +1185,30 @@ export default function App() {
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-accent outline-none"
                 />
               </div>
-              <div className="flex gap-3 pt-4">
+              <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                <button 
+                  onClick={() => {
+                    setUserApiKey('');
+                    setIsApiKeyModalOpen(false);
+                  }}
+                  className="flex-1 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl font-bold text-sm transition-all"
+                >
+                  Clear Key
+                </button>
                 <button 
                   onClick={() => setIsApiKeyModalOpen(false)}
                   className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm transition-all"
                 >
-                  Close
+                  Cancel
                 </button>
                 <button 
                   onClick={() => {
                     setIsApiKeyModalOpen(false);
-                    alert('API key updated successfully!');
+                    if (userApiKey) alert('Custom API key is now active!');
                   }}
                   className="flex-1 py-3 bg-accent text-accent-foreground rounded-xl font-bold text-sm hover:opacity-90 transition-all"
                 >
-                  Save Key
+                  Save & Close
                 </button>
               </div>
               <p className="text-[10px] text-center opacity-30">
@@ -951,9 +1224,12 @@ export default function App() {
         {isSourceControlOpen && (
           <motion.section 
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 300, opacity: 1 }}
+            animate={{ width: window.innerWidth < 768 ? '100%' : 300, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="border-r border-border-custom bg-bg-secondary flex flex-col overflow-hidden"
+            className={cn(
+              "flex flex-col overflow-hidden z-40 glass-panel",
+              "fixed md:relative inset-y-0 left-16 md:left-0 right-0 md:right-auto"
+            )}
           >
             <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
               <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Source Control</span>
@@ -1070,9 +1346,12 @@ export default function App() {
         {isThemePanelOpen && (
           <motion.section 
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 280, opacity: 1 }}
+            animate={{ width: window.innerWidth < 768 ? '100%' : 280, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="border-r border-border-custom bg-bg-secondary flex flex-col overflow-hidden"
+            className={cn(
+              "flex flex-col overflow-hidden z-40 glass-panel",
+              "fixed md:relative inset-y-0 left-16 md:left-0 right-0 md:right-auto"
+            )}
           >
             <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
               <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Themes</span>
@@ -1144,9 +1423,12 @@ export default function App() {
         {isExplorerOpen && (
           <motion.section 
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 240, opacity: 1 }}
+            animate={{ width: window.innerWidth < 768 ? '100%' : 240, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="border-r border-border-custom bg-bg-secondary flex flex-col overflow-hidden"
+            className={cn(
+              "flex flex-col overflow-hidden z-40 glass-panel",
+              "fixed md:relative inset-y-0 left-16 md:left-0 right-0 md:right-auto"
+            )}
           >
             <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
               <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Explorer</span>
@@ -1179,9 +1461,12 @@ export default function App() {
         {isSearchOpen && (
           <motion.section 
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 300, opacity: 1 }}
+            animate={{ width: window.innerWidth < 768 ? '100%' : 300, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            className="border-r border-border-custom bg-bg-secondary flex flex-col overflow-hidden"
+            className={cn(
+              "flex flex-col overflow-hidden z-40 glass-panel",
+              "fixed md:relative inset-y-0 left-16 md:left-0 right-0 md:right-auto"
+            )}
           >
             <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
               <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Search</span>
@@ -1245,7 +1530,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Left Side - Preview (As requested by user) */}
-      <section className="w-1/3 border-r border-border-custom flex flex-col bg-bg-secondary">
+      <section className="w-full md:w-1/3 h-64 md:h-full border-b md:border-b-0 md:border-r border-border-custom flex flex-col bg-bg-secondary shrink-0">
         <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
           <span className="text-xs font-mono uppercase tracking-widest opacity-50 text-text-secondary">Live Preview</span>
           <div className="flex gap-2">
@@ -1275,142 +1560,152 @@ export default function App() {
       {/* Main Content - Editor & AI */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="h-16 border-b border-border-custom flex items-center px-6 justify-between bg-bg-secondary">
-          <div className="flex items-center gap-4">
-            <div className="flex bg-white/5 rounded-lg p-1 border border-white/10">
+        <header className="h-16 border-b border-border-custom flex items-center px-4 md:px-6 justify-between bg-bg-secondary shrink-0 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-2 md:gap-4 min-w-max">
+            <div className="flex bg-white/5 rounded-lg p-1 border border-white/10 overflow-x-auto no-scrollbar max-w-[300px] md:max-w-none">
               {files.map(file => (
                 <button
                   key={file.id}
                   onClick={() => setActiveFileId(file.id)}
                   className={cn(
-                    "px-3 py-1.5 rounded-md text-xs font-mono transition-all flex items-center gap-2",
+                    "px-2 md:px-3 py-1 md:py-1.5 rounded-md text-[10px] md:text-xs font-mono transition-all flex items-center gap-1.5 md:gap-2 min-w-max",
                     activeFileId === file.id ? "bg-accent text-accent-foreground font-bold" : "hover:bg-white/5 text-text-secondary"
                   )}
                 >
                   <Code2 className="w-3 h-3" />
-                  {file.name}
+                  <span className="max-w-[100px] truncate">{file.name}</span>
                 </button>
               ))}
             </div>
-            <div className="h-6 w-[1px] bg-white/10" />
+            <div className="hidden md:block h-6 w-[1px] bg-white/10" />
             <select 
               value={activeFile.language}
               onChange={(e) => updateFile(activeFileId, { language: e.target.value })}
-              className="bg-transparent text-xs font-mono border-none focus:ring-0 cursor-pointer hover:text-text-primary transition-colors"
+              className="hidden md:block bg-transparent text-xs font-mono border-none focus:ring-0 cursor-pointer hover:text-text-primary transition-colors"
             >
               {LANGUAGES.map(lang => (
                 <option key={lang.id} value={lang.id} className="bg-bg-secondary">{lang.name}</option>
               ))}
             </select>
-            <div className="h-6 w-[1px] bg-white/10" />
-            <div className="flex items-center gap-2 bg-white/5 rounded-md px-3 py-1.5 border border-white/10">
-              <Key className="w-3.5 h-3.5 text-blue-400" />
-              <input 
-                type="password"
-                placeholder="Gemini API Key"
-                className="bg-transparent text-xs border-none focus:ring-0 w-48 placeholder:opacity-30"
-                value={userApiKey}
-                onChange={e => setUserApiKey(e.target.value)}
-              />
-            </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 ml-4 shrink-0">
+            <button 
+              onClick={() => setIsApiKeyModalOpen(true)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all bg-white/5 text-text-secondary border border-transparent hover:bg-white/10",
+                userApiKey && "text-accent border-accent/30 bg-accent/5"
+              )}
+              title="Configure API Key"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{userApiKey ? 'Key Active' : 'API Key'}</span>
+            </button>
             <button 
               onClick={() => setUseThinking(!useThinking)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all",
-                useThinking ? "bg-purple-500/20 text-purple-400 border border-purple-500/30" : "bg-white/5 text-text-secondary border border-transparent"
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-tighter transition-all relative overflow-hidden group",
+                useThinking ? "bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-[0_0_15px_rgba(168,85,247,0.2)]" : "bg-white/5 text-text-secondary border border-transparent"
               )}
             >
-              <Brain className="w-3.5 h-3.5" />
-              Thinking Mode
-            </button>
-            <button 
-              onClick={handleShare}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-white/5 transition-colors text-text-secondary"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              Share
+              {useThinking && (
+                <motion.div 
+                  layoutId="thinking-glow"
+                  className="absolute inset-0 bg-gradient-to-r from-purple-500/0 via-purple-500/10 to-purple-500/0"
+                  animate={{ x: ['-100%', '100%'] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                />
+              )}
+              <Brain className={cn("w-3.5 h-3.5 relative z-10", useThinking && "animate-pulse")} />
+              <span className="relative z-10 hidden sm:inline">Thinking Mode</span>
             </button>
             <button 
               onClick={handleRun}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
+              className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              Run Project
+              <span className="hidden sm:inline">Run Project</span>
             </button>
           </div>
         </header>
 
-        {/* Multi-Editor Grid - 3 Boxes Now */}
-        <div className="flex-1 grid grid-cols-3 gap-[1px] bg-white/5 overflow-hidden">
-          {files.slice(0, 3).map((file, idx) => (
-            <div 
-              key={file.id} 
-              className={cn(
-                "relative transition-all duration-300 flex flex-col",
-                activeFileId === file.id ? "ring-1 ring-accent/50 z-10" : "opacity-80 hover:opacity-100"
-              )}
-              onClick={() => setActiveFileId(file.id)}
-            >
-              <div className="h-8 bg-bg-secondary border-b border-border-custom flex items-center px-3 justify-between z-20 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-text-secondary uppercase tracking-widest">Box {idx + 1}</span>
-                  <span className="text-[10px] font-mono text-accent/70 truncate max-w-[100px]">{file.name}</span>
-                </div>
-                <select 
-                  value={file.language}
-                  onChange={(e) => updateFile(file.id, { language: e.target.value })}
-                  className="bg-transparent text-[9px] font-mono border-none focus:ring-0 cursor-pointer opacity-50 hover:opacity-100"
-                >
-                  {LANGUAGES.map(lang => (
-                    <option key={lang.id} value={lang.id} className="bg-bg-secondary">{lang.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex-1 min-h-0">
-                <Suspense fallback={<div className="h-full w-full flex items-center justify-center bg-bg-primary text-text-secondary animate-pulse">Loading Editor...</div>}>
-                  <Editor
-                    height="100%"
-                    language={file.language}
-                    theme="nexus-theme"
-                    value={file.code}
-                    onChange={(val) => updateFile(file.id, { code: val || '' })}
-                    options={{
-                      fontSize: 12,
-                      fontFamily: 'JetBrains Mono, monospace',
-                      minimap: { enabled: false },
-                      padding: { top: 10 },
-                      scrollBeyondLastLine: false,
-                      lineNumbers: 'on',
-                      glyphMargin: false,
-                      folding: true,
-                      lineDecorationsWidth: 0,
-                      lineNumbersMinChars: 2,
-                    }}
-                  />
-                </Suspense>
-              </div>
+        {/* Single Editor View */}
+        <div className="flex-1 flex flex-col bg-bg-primary overflow-hidden">
+          <div className="h-8 bg-bg-secondary border-b border-border-custom flex items-center px-4 justify-between z-20 shrink-0">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-mono text-accent font-bold uppercase tracking-widest">{activeFile.name}</span>
+              <span className="text-[9px] font-mono text-text-secondary opacity-40">Editing</span>
             </div>
-          ))}
-          {files.length < 3 && Array.from({ length: 3 - files.length }).map((_, i) => (
-            <div key={`empty-${i}`} className="bg-bg-secondary flex items-center justify-center text-text-secondary italic text-xs">
-              Empty Slot
+            <div className="flex items-center gap-4">
+              <select 
+                value={activeFile.language}
+                onChange={(e) => updateFile(activeFileId, { language: e.target.value })}
+                className="bg-transparent text-[10px] font-mono border-none focus:ring-0 cursor-pointer opacity-50 hover:opacity-100 transition-opacity"
+              >
+                {LANGUAGES.map(lang => (
+                  <option key={lang.id} value={lang.id} className="bg-bg-secondary">{lang.name}</option>
+                ))}
+              </select>
             </div>
-          ))}
+          </div>
+          <div className="flex-1 relative">
+            <Suspense fallback={<div className="h-full w-full flex items-center justify-center bg-bg-primary text-text-secondary animate-pulse">Loading Editor...</div>}>
+              <Editor
+                height="100%"
+                language={activeFile.language}
+                theme="nexus-theme"
+                value={activeFile.code}
+                onChange={(val) => updateFile(activeFileId, { code: val || '' })}
+                onMount={(editor, monaco) => handleEditorMount(editor, monaco, activeFileId)}
+                options={{
+                  fontSize: 13,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  minimap: { enabled: true, scale: 0.75, side: 'right' },
+                  padding: { top: 20 },
+                  scrollBeyondLastLine: false,
+                  lineNumbers: 'on',
+                  glyphMargin: true,
+                  folding: true,
+                  lineDecorationsWidth: 10,
+                  lineNumbersMinChars: 3,
+                  suggestOnTriggerCharacters: true,
+                  quickSuggestions: {
+                    other: true,
+                    comments: true,
+                    strings: true
+                  },
+                  wordBasedSuggestions: "allDocuments",
+                  parameterHints: {
+                    enabled: true
+                  },
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  autoClosingBrackets: 'always',
+                  autoClosingQuotes: 'always',
+                  autoSurround: 'languageDefined',
+                  bracketPairColorization: {
+                    enabled: true
+                  },
+                  smoothScrolling: true,
+                  cursorBlinking: 'smooth',
+                  cursorSmoothCaretAnimation: 'on'
+                }}
+              />
+            </Suspense>
+          </div>
         </div>
 
         {/* Bottom Panel - AI & Prompt */}
-        <footer className="h-80 border-t border-border-custom flex flex-col bg-bg-secondary">
-          <div className="flex border-b border-border-custom">
-            {['ai', 'chat', 'live', 'editor'].map((tab) => (
+        <footer className="h-80 border-t border-border-custom flex flex-col bg-bg-secondary shrink-0">
+          <div className="flex border-b border-border-custom overflow-x-auto no-scrollbar shrink-0">
+            {['ai', 'chat', 'live', 'editor', 'debugger', 'command'].map((tab) => (
               <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 className={cn(
-                  "px-6 py-2 text-[10px] font-mono uppercase tracking-widest transition-colors relative",
-                  activeTab === tab ? "text-accent" : "opacity-40 hover:opacity-100"
+                  "px-4 md:px-6 py-3 md:py-2 text-[10px] font-mono uppercase tracking-widest transition-colors relative min-w-max",
+                  activeTab === tab ? "text-accent" : "opacity-40 hover:opacity-100",
+                  tab === 'command' && "md:hidden"
                 )}
               >
                 {tab === 'ai' ? 'AI Assistant' : tab === 'live' ? 'Live AI' : tab}
@@ -1419,9 +1714,12 @@ export default function App() {
             ))}
           </div>
 
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-bg-secondary/50 backdrop-blur-md">
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 font-mono text-sm">
+            <div className={cn(
+              "flex-1 overflow-y-auto p-4 font-mono text-sm custom-scrollbar",
+              activeTab === 'command' ? "hidden md:block" : "block"
+            )}>
               <AnimatePresence mode="wait">
                 {activeTab === 'ai' && (
                   <motion.div
@@ -1601,21 +1899,114 @@ export default function App() {
                   </motion.div>
                 )}
 
-                {activeTab === 'editor' && (
+                {activeTab === 'debugger' && (
                   <motion.div
-                    key="console-content"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="text-text-secondary"
+                    key="debugger-content"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex flex-col h-full"
                   >
-                    <div className="flex gap-2 mb-1">
-                      <span className="text-accent">[system]</span>
-                      <span>Nexus Forge initialized.</span>
+                    <div className="flex items-center justify-between mb-4 bg-white/5 p-3 rounded-xl border border-white/10">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <div className={cn(
+                            "w-2 h-2 rounded-full",
+                            debuggerStatus === 'paused' ? "bg-yellow-500 animate-pulse" : debuggerStatus === 'running' ? "bg-green-500" : "bg-zinc-600"
+                          )} />
+                          <span className="text-xs font-bold uppercase tracking-widest">{debuggerStatus}</span>
+                        </div>
+                        {pausedLine && (
+                          <span className="text-xs text-text-secondary">
+                            Paused at line <span className="text-accent">{pausedLine.line}</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={handleContinue}
+                          disabled={debuggerStatus !== 'paused'}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-accent text-accent-foreground rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 transition-all hover:scale-105 active:scale-95"
+                          title="Continue (F8)"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          Continue
+                        </button>
+                        <button 
+                          onClick={handleStep}
+                          disabled={debuggerStatus !== 'paused'}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-white/10 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 transition-all hover:bg-white/20"
+                          title="Step Over (F10)"
+                        >
+                          <ArrowRight className="w-3 h-3" />
+                          Step Over
+                        </button>
+                        <button 
+                          onClick={handleStep}
+                          disabled={debuggerStatus !== 'paused'}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-white/10 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 transition-all hover:bg-white/20"
+                          title="Step Into (F11)"
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                          Step Into
+                        </button>
+                        <button 
+                          onClick={handleStep}
+                          disabled={debuggerStatus !== 'paused'}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-white/10 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 transition-all hover:bg-white/20"
+                          title="Step Out (Shift+F11)"
+                        >
+                          <ChevronUp className="w-3 h-3" />
+                          Step Out
+                        </button>
+                        <button 
+                          onClick={handleRun}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-white/10 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-white/20 transition-all"
+                          title="Restart"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Restart
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <span className="text-blue-500">[info]</span>
-                      <span>Ready for input.</span>
+
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-hidden">
+                      <div className="flex flex-col bg-black/20 rounded-xl border border-white/5 overflow-hidden">
+                        <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Variables</span>
+                          <span className="text-[9px] font-mono opacity-30">Global Scope</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                          {Object.entries(inspectedVariables).length > 0 ? (
+                            Object.entries(inspectedVariables)
+                              .filter(([key]) => !['nexusDebugger', 'parent', 'opener', 'top', 'self', 'window', 'document', 'location', 'history', 'navigator', 'screen'].includes(key))
+                              .map(([key, value]) => (
+                                <div key={key} className="flex items-start gap-2 text-[11px] font-mono group">
+                                  <span className="text-blue-400 shrink-0">{key}:</span>
+                                  <span className="text-text-secondary break-all">
+                                    {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                                  </span>
+                                </div>
+                              ))
+                          ) : (
+                            <div className="text-zinc-600 italic text-xs">No variables to inspect. Set a breakpoint and run.</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col bg-black/20 rounded-xl border border-white/5 overflow-hidden">
+                        <div className="px-4 py-2 bg-white/5 border-b border-white/5">
+                          <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Call Stack</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                          {pausedLine ? (
+                            <div className="flex items-center gap-3 text-[11px] font-mono text-accent bg-accent/10 p-2 rounded-lg border border-accent/20">
+                              <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                              <span>(anonymous) : line {pausedLine.line}</span>
+                            </div>
+                          ) : (
+                            <div className="text-zinc-600 italic text-xs">Stack empty.</div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -1623,19 +2014,51 @@ export default function App() {
             </div>
 
             {/* Prompt Input */}
-            <div className="w-96 border-l border-border-custom p-4 flex flex-col gap-3 bg-bg-primary">
+            <div className={cn(
+              "w-full md:w-96 border-t md:border-t-0 md:border-l border-border-custom p-4 flex flex-col gap-3 bg-bg-primary shrink-0",
+              activeTab === 'command' ? "flex" : "hidden md:flex"
+            )}>
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase tracking-tighter opacity-40">Command Center</span>
-                <div className="flex gap-1">
-                  <div className={cn("w-1.5 h-1.5 rounded-full", isListening ? "bg-red-500 animate-pulse" : "bg-text-secondary/30")} />
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div 
+                      onClick={() => setIsProjectMode(!isProjectMode)}
+                      className={cn(
+                        "w-7 h-4 rounded-full transition-all relative border border-white/10",
+                        isProjectMode ? "bg-accent" : "bg-white/5"
+                      )}
+                    >
+                      <div className={cn(
+                        "absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all",
+                        isProjectMode ? "left-3.5" : "left-0.5"
+                      )} />
+                    </div>
+                    <span className="text-[9px] font-bold uppercase tracking-tighter opacity-40 group-hover:opacity-100 transition-opacity">Project</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div 
+                      onClick={() => setUseThinking(!useThinking)}
+                      className={cn(
+                        "w-7 h-4 rounded-full transition-all relative border border-white/10",
+                        useThinking ? "bg-accent" : "bg-white/5"
+                      )}
+                    >
+                      <div className={cn(
+                        "absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all",
+                        useThinking ? "left-3.5" : "left-0.5"
+                      )} />
+                    </div>
+                    <span className="text-[9px] font-bold uppercase tracking-tighter opacity-40 group-hover:opacity-100 transition-opacity">Think</span>
+                  </label>
                 </div>
               </div>
-              <div className="relative flex-1">
+              <div className="relative h-24 md:h-32 md:flex-1">
                 <textarea 
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Describe what to build or fix..."
-                  className="w-full h-full bg-white/5 rounded-xl p-3 text-sm border border-white/10 focus:border-accent/50 focus:ring-0 resize-none transition-all placeholder:opacity-20"
+                  placeholder="Describe what to build..."
+                  className="w-full h-full bg-white/5 rounded-xl p-3 text-xs md:text-sm border border-white/10 focus:border-accent/50 focus:ring-0 resize-none transition-all placeholder:opacity-20"
                 />
                 <button 
                   onClick={toggleListening}
@@ -1650,7 +2073,7 @@ export default function App() {
               <button 
                 onClick={handleGenerate}
                 disabled={isGenerating || !prompt}
-                className="w-full py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full py-2.5 md:py-3 bg-accent text-accent-foreground rounded-lg text-[10px] md:text-xs font-bold hover:opacity-90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 Execute Command
@@ -1659,6 +2082,39 @@ export default function App() {
           </div>
         </footer>
       </main>
+
+      {/* Voice Status Indicator */}
+      <AnimatePresence>
+        {(isListening || transcript) && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-4 px-6 py-3 bg-bg-secondary border border-accent/30 rounded-full shadow-2xl backdrop-blur-xl"
+          >
+            <div className={cn(
+              "w-3 h-3 rounded-full",
+              isListening ? "bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "bg-accent"
+            )} />
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                {isListening ? "Listening..." : "Interpreting..."}
+              </span>
+              <span className="text-sm font-bold text-white max-w-[300px] truncate italic">
+                {transcript || "Speak now..."}
+              </span>
+            </div>
+            {isListening && (
+              <button 
+                onClick={toggleListening}
+                className="p-1.5 bg-white/5 hover:bg-white/10 rounded-full transition-colors"
+              >
+                <MicOff className="w-4 h-4 text-red-400" />
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
