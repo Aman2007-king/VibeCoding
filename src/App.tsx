@@ -41,14 +41,32 @@ import {
   History,
   Check,
   Plus,
-  ArrowRight
+  ArrowRight,
+  Database,
+  BarChart3,
+  ShieldCheck,
+  TestTube2,
+  BookOpen,
+  Key,
+  Command,
+  Maximize2,
+  Minimize2,
+  Split,
+  Copy,
+  ExternalLink,
+  MoreVertical,
+  LogOut,
+  Moon,
+  Sun,
+  Monitor,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import confetti from 'canvas-confetti';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject } from './services/geminiService';
+import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject, getGhostText } from './services/geminiService';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -213,11 +231,12 @@ export default function App() {
   const [transcript, setTranscript] = useState('');
   const [githubToken, setGithubToken] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState('');
-  const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live' | 'command' | 'debugger'>('editor');
+  const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live' | 'command' | 'debugger' | 'database' | 'analytics' | 'review' | 'tests' | 'docs'>('editor');
   const [prompt, setPrompt] = useState('');
   const [useThinking, setUseThinking] = useState(false);
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model', parts: { text: string }[] }[]>([]);
   const [breakpoints, setBreakpoints] = useState<Record<number, number[]>>({});
+  const [conditionalBreakpoints, setConditionalBreakpoints] = useState<Record<number, Record<number, string>>>({});
   const [debuggerStatus, setDebuggerStatus] = useState<'idle' | 'running' | 'paused'>('idle');
   const [pausedLine, setPausedLine] = useState<{ fileId: number, line: number } | null>(null);
   const [inspectedVariables, setInspectedVariables] = useState<Record<string, any>>({});
@@ -243,6 +262,24 @@ export default function App() {
   const [view, setView] = useState<'ide' | 'blog' | 'about'>('ide');
   const [userApiKey, setUserApiKey] = useState('');
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [steppingMode, setSteppingMode] = useState<'over' | 'into' | 'out' | null>(null);
+  const [callStack, setCallStack] = useState<{ name: string, fileId: number, line: number }[]>([]);
+  const [targetDepth, setTargetDepth] = useState<number | null>(null);
+  const [currentDepth, setCurrentDepth] = useState(0);
+
+  // Database Explorer State
+  const [sqlQuery, setSqlQuery] = useState('SELECT * FROM sqlite_master;');
+  const [sqlResults, setSqlResults] = useState<any[]>([]);
+  const [sqlError, setSqlError] = useState<string | null>(null);
+  const [dbTables, setDbTables] = useState<string[]>([]);
+
+  // Analytics State
+  const [projectStats, setProjectStats] = useState({
+    totalLines: 0,
+    fileCount: 0,
+    aiInteractions: 0,
+    healthScore: 85
+  });
 
   useEffect(() => {
     // Apply theme colors to CSS variables
@@ -251,8 +288,9 @@ export default function App() {
       root.style.setProperty(key, value);
     });
 
-    // Update Monaco theme
+    // Update Monaco theme and register Ghost Text
     loader.init().then(monaco => {
+      monacoRef.current = monaco;
       monaco.editor.defineTheme('nexus-theme', {
         base: 'vs-dark',
         inherit: true,
@@ -268,8 +306,59 @@ export default function App() {
         }
       });
       monaco.editor.setTheme('nexus-theme');
+
+      // Register Inline Completions Provider (Ghost Text)
+      const provider = monaco.languages.registerInlineCompletionsProvider(['javascript', 'typescript', 'html', 'css'], {
+        provideInlineCompletions: async (model, position) => {
+          const textBefore = model.getValueInRange({
+            startLineNumber: 1,
+            startColumn: 1,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column
+          });
+          const textAfter = model.getValueInRange({
+            startLineNumber: position.lineNumber,
+            startColumn: position.column,
+            endLineNumber: model.getLineCount(),
+            endColumn: model.getLineMaxColumn(model.getLineCount())
+          });
+
+          // Only trigger if typing at the end of a line or after a space/punctuation
+          const lastChar = textBefore.slice(-1);
+          if (!/[ \n\t.,;({]/.test(lastChar) && textBefore.length > 0) return;
+
+          try {
+            const suggestion = await getGhostText(
+              textBefore.slice(-500), // Context window
+              textAfter.slice(0, 200),
+              model.getLanguageId(),
+              userApiKey
+            );
+
+            if (!suggestion) return;
+
+            return {
+              items: [{
+                insertText: suggestion,
+                range: {
+                  startLineNumber: position.lineNumber,
+                  startColumn: position.column,
+                  endLineNumber: position.lineNumber,
+                  endColumn: position.column
+                }
+              }]
+            };
+          } catch (err) {
+            console.error('Ghost Text Error:', err);
+            return;
+          }
+        },
+        freeInlineCompletions: () => {}
+      });
+
+      return () => provider.dispose();
     });
-  }, [currentTheme]);
+  }, [currentTheme, userApiKey]);
 
   const recognitionRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -786,7 +875,7 @@ export default function App() {
       const instrumentedLines = lines.map((line, idx) => {
         const lineNum = idx + 1;
         if (!line.trim() || line.trim().startsWith('//')) return line;
-        return `await window.parent.nexusDebugger.sync(${file.id}, ${lineNum}, typeof window !== 'undefined' ? window : {}); ${line}`;
+        return `await window.nexusDebugger.sync(${file.id}, ${lineNum}, typeof window !== 'undefined' ? window : {}); ${line}`;
       });
       return `/* File: ${file.name} */\n(async () => {\n  try {\n    ${instrumentedLines.join('\n')}\n  } catch (e) {\n    console.error('Debugger Error in ${file.name}:', e);\n  }\n})();`;
     }).join('\n\n');
@@ -804,15 +893,49 @@ export default function App() {
             // Debugger bridge
             window.nexusDebugger = {
               sync: async (fileId, line, scope) => {
-                window.parent.postMessage({ type: 'DEBUGGER_SYNC', fileId, line, scope }, '*');
-                return new Promise(resolve => {
-                  window.addEventListener('message', function handler(e) {
-                    if (e.data.type === 'DEBUGGER_CONTINUE') {
+                // Use Error stack to get real depth
+                const depth = new Error().stack.split('\n').length;
+                
+                // Get condition for this line if any
+                window.parent.postMessage({ type: 'GET_BREAKPOINT_CONDITION', fileId, line, depth }, '*');
+                
+                const shouldPause = await new Promise(resolve => {
+                  const handler = (e) => {
+                    if (e.data.type === 'BREAKPOINT_CONDITION_RESULT') {
                       window.removeEventListener('message', handler);
-                      resolve();
+                      const condition = e.data.condition;
+                      if (condition === 'false') resolve(false);
+                      if (condition === '') resolve(true);
+                      try {
+                        const func = new Function(...Object.keys(scope), 'return ' + condition);
+                        resolve(!!func(...Object.values(scope)));
+                      } catch (err) {
+                        console.error('Error evaluating condition:', err);
+                        resolve(true);
+                      }
                     }
-                  });
+                  };
+                  window.addEventListener('message', handler);
                 });
+
+                if (shouldPause) {
+                  window.parent.postMessage({ 
+                    type: 'DEBUGGER_SYNC', 
+                    fileId, 
+                    line, 
+                    scope, 
+                    depth 
+                  }, '*');
+                  
+                  return new Promise(resolve => {
+                    window.addEventListener('message', function handler(e) {
+                      if (e.data.type === 'DEBUGGER_CONTINUE') {
+                        window.removeEventListener('message', handler);
+                        resolve();
+                      }
+                    });
+                  });
+                }
               }
             };
           </script>
@@ -842,45 +965,73 @@ export default function App() {
 
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
-      if (e.data.type === 'DEBUGGER_SYNC') {
-        const { fileId, line, scope } = e.data;
+      if (e.data.type === 'GET_BREAKPOINT_CONDITION') {
+        const { fileId, line, depth } = e.data;
         const fileBreakpoints = breakpoints[fileId] || [];
+        const fileCondBreakpoints = conditionalBreakpoints[fileId] || {};
         
-        // Pause if breakpoint hit OR if we are currently stepping
-        if (fileBreakpoints.includes(line) || stepping) {
-          setDebuggerStatus('paused');
-          setPausedLine({ fileId, line });
-          setInspectedVariables(scope);
-          setActiveFileId(fileId);
-          setActiveTab('debugger');
-          setStepping(false); // Reset stepping after pause
-          
-          // Highlight the paused line in the editor
-          const editor = editorRefs.current[fileId];
-          if (editor && monacoRef.current) {
-            const decorations = [{
-              range: new monacoRef.current.Range(line, 1, line, 1),
-              options: {
-                isWholeLine: true,
-                className: 'paused-line-decoration',
-                glyphMarginClassName: 'paused-line-glyph'
-              }
-            }];
-            editor.pausedDecorations = editor.deltaDecorations(editor.pausedDecorations || [], decorations);
-            editor.revealLineInCenter(line);
+        const isBreakpoint = fileBreakpoints.includes(line);
+        const condition = fileCondBreakpoints[line] || null;
+        
+        let shouldPauseStepping = false;
+        if (steppingMode === 'into') {
+          shouldPauseStepping = true;
+        } else if (steppingMode === 'over') {
+          if (depth <= (targetDepth || 0)) shouldPauseStepping = true;
+        } else if (steppingMode === 'out') {
+          if (depth < (targetDepth || 0)) shouldPauseStepping = true;
+        } else if (stepping) {
+          shouldPauseStepping = true;
+        }
+
+        const iframe = document.querySelector('iframe');
+        if (iframe && iframe.contentWindow) {
+          if (isBreakpoint || shouldPauseStepping) {
+            iframe.contentWindow.postMessage({ 
+              type: 'BREAKPOINT_CONDITION_RESULT', 
+              condition: isBreakpoint ? condition : '' 
+            }, '*');
+          } else {
+            iframe.contentWindow.postMessage({ 
+              type: 'BREAKPOINT_CONDITION_RESULT', 
+              condition: 'false' 
+            }, '*');
           }
-        } else {
-          // Not paused, continue execution automatically
-          const iframe = document.querySelector('iframe');
-          if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
-          }
+        }
+      }
+
+      if (e.data.type === 'DEBUGGER_SYNC') {
+        const { fileId, line, scope, depth } = e.data;
+        
+        setDebuggerStatus('paused');
+        setPausedLine({ fileId, line });
+        setInspectedVariables(scope);
+        setCurrentDepth(depth);
+        setActiveFileId(fileId);
+        setActiveTab('debugger');
+        setStepping(false);
+        setSteppingMode(null);
+        setTargetDepth(null);
+        
+        // Highlight the paused line in the editor
+        const editor = editorRefs.current[fileId];
+        if (editor && monacoRef.current) {
+          const decorations = [{
+            range: new monacoRef.current.Range(line, 1, line, 1),
+            options: {
+              isWholeLine: true,
+              className: 'paused-line-decoration',
+              glyphMarginClassName: 'paused-line-glyph'
+            }
+          }];
+          editor.pausedDecorations = editor.deltaDecorations(editor.pausedDecorations || [], decorations);
+          editor.revealLineInCenter(line);
         }
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [breakpoints, stepping]);
+  }, [breakpoints, conditionalBreakpoints, stepping, steppingMode, targetDepth]);
 
   const handleContinue = () => {
     const iframe = document.querySelector('iframe');
@@ -888,6 +1039,7 @@ export default function App() {
       iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
       setDebuggerStatus('running');
       setStepping(false);
+      setSteppingMode(null);
       
       if (pausedLine) {
         const editor = editorRefs.current[pausedLine.fileId];
@@ -899,8 +1051,8 @@ export default function App() {
     }
   };
 
-  const handleStep = () => {
-    setStepping(true);
+  const handleStepInto = () => {
+    setSteppingMode('into');
     const iframe = document.querySelector('iframe');
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
@@ -915,6 +1067,70 @@ export default function App() {
       setPausedLine(null);
     }
   };
+
+  const handleStepOver = () => {
+    setSteppingMode('over');
+    setTargetDepth(currentDepth);
+    const iframe = document.querySelector('iframe');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
+      setDebuggerStatus('running');
+      
+      if (pausedLine) {
+        const editor = editorRefs.current[pausedLine.fileId];
+        if (editor) {
+          editor.pausedDecorations = editor.deltaDecorations(editor.pausedDecorations || [], []);
+        }
+      }
+      setPausedLine(null);
+    }
+  };
+
+  const executeQuery = async () => {
+    setSqlError(null);
+    try {
+      const res = await fetch('/api/db/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: sqlQuery })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSqlResults(Array.isArray(data.results) ? data.results : [data.results]);
+        fetchTables();
+      } else {
+        setSqlError(data.error);
+      }
+    } catch (err: any) {
+      setSqlError(err.message);
+    }
+  };
+
+  const fetchTables = async () => {
+    try {
+      const res = await fetch('/api/db/tables');
+      const data = await res.json();
+      if (data.success) {
+        setDbTables(data.tables.map((t: any) => t.name));
+      }
+    } catch (err) {
+      console.error('Fetch tables error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'database') {
+      fetchTables();
+    }
+    if (activeTab === 'analytics') {
+      const lines = files.reduce((acc, f) => acc + f.code.split('\n').length, 0);
+      setProjectStats(prev => ({
+        ...prev,
+        totalLines: lines,
+        fileCount: files.length,
+      }));
+    }
+  }, [activeTab, files]);
 
   const COMMANDS = [
     { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setPrompt('Build a modern landing page'); handleGenerate(); } },
@@ -1698,7 +1914,7 @@ export default function App() {
         {/* Bottom Panel - AI & Prompt */}
         <footer className="h-80 border-t border-border-custom flex flex-col bg-bg-secondary shrink-0">
           <div className="flex border-b border-border-custom overflow-x-auto no-scrollbar shrink-0">
-            {['ai', 'chat', 'live', 'editor', 'debugger', 'command'].map((tab) => (
+            {['ai', 'chat', 'live', 'editor', 'debugger', 'database', 'analytics', 'review', 'tests', 'docs', 'command'].map((tab) => (
               <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
@@ -1932,7 +2148,7 @@ export default function App() {
                           Continue
                         </button>
                         <button 
-                          onClick={handleStep}
+                          onClick={handleStepOver}
                           disabled={debuggerStatus !== 'paused'}
                           className="flex items-center gap-2 px-3 py-1.5 bg-white/10 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 transition-all hover:bg-white/20"
                           title="Step Over (F10)"
@@ -1941,7 +2157,7 @@ export default function App() {
                           Step Over
                         </button>
                         <button 
-                          onClick={handleStep}
+                          onClick={handleStepInto}
                           disabled={debuggerStatus !== 'paused'}
                           className="flex items-center gap-2 px-3 py-1.5 bg-white/10 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 transition-all hover:bg-white/20"
                           title="Step Into (F11)"
@@ -1950,7 +2166,7 @@ export default function App() {
                           Step Into
                         </button>
                         <button 
-                          onClick={handleStep}
+                          onClick={handleStepOut}
                           disabled={debuggerStatus !== 'paused'}
                           className="flex items-center gap-2 px-3 py-1.5 bg-white/10 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-30 transition-all hover:bg-white/20"
                           title="Step Out (Shift+F11)"
@@ -1969,7 +2185,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-hidden">
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 overflow-hidden">
                       <div className="flex flex-col bg-black/20 rounded-xl border border-white/5 overflow-hidden">
                         <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
                           <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Variables</span>
@@ -1978,17 +2194,71 @@ export default function App() {
                         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                           {Object.entries(inspectedVariables).length > 0 ? (
                             Object.entries(inspectedVariables)
-                              .filter(([key]) => !['nexusDebugger', 'parent', 'opener', 'top', 'self', 'window', 'document', 'location', 'history', 'navigator', 'screen'].includes(key))
+                              .filter(([key]) => !['nexusDebugger', 'parent', 'opener', 'top', 'self', 'window', 'document', 'location', 'history', 'navigator', 'screen', 'chrome', 'speechSynthesis'].includes(key))
                               .map(([key, value]) => (
-                                <div key={key} className="flex items-start gap-2 text-[11px] font-mono group">
-                                  <span className="text-blue-400 shrink-0">{key}:</span>
-                                  <span className="text-text-secondary break-all">
-                                    {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
-                                  </span>
+                                <div key={key} className="flex flex-col gap-1 text-[11px] font-mono group border-b border-white/5 pb-2 last:border-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-blue-400 shrink-0 font-bold">{key}:</span>
+                                    <span className="text-zinc-500 text-[9px] italic">({typeof value})</span>
+                                  </div>
+                                  <div className="text-text-secondary break-all pl-2 border-l border-white/10">
+                                    {typeof value === 'object' && value !== null 
+                                      ? <pre className="text-[10px] whitespace-pre-wrap">{JSON.stringify(value, (k, v) => typeof v === 'function' ? '[Function]' : v, 2)}</pre> 
+                                      : String(value)}
+                                  </div>
                                 </div>
                               ))
                           ) : (
                             <div className="text-zinc-600 italic text-xs">No variables to inspect. Set a breakpoint and run.</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col bg-black/20 rounded-xl border border-white/5 overflow-hidden">
+                        <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Breakpoints</span>
+                          <span className="text-[9px] font-mono opacity-30">Conditional</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                          {Object.entries(breakpoints).map(([fId, lines]) => (
+                            <div key={fId} className="space-y-2">
+                              <div className="text-[10px] font-bold text-accent opacity-60 truncate">
+                                {files.find(f => f.id === Number(fId))?.name}
+                              </div>
+                              {lines.map(line => (
+                                <div key={line} className="bg-white/5 p-2 rounded-lg border border-white/5 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] opacity-50">Line {line}</span>
+                                    <button 
+                                      onClick={() => toggleBreakpoint(Number(fId), line)}
+                                      className="text-red-400 hover:text-red-300 transition-colors"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[8px] uppercase tracking-widest opacity-30">Condition</label>
+                                    <input 
+                                      placeholder="e.g. x > 10"
+                                      value={conditionalBreakpoints[Number(fId)]?.[line] || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setConditionalBreakpoints(prev => ({
+                                          ...prev,
+                                          [Number(fId)]: {
+                                            ...(prev[Number(fId)] || {}),
+                                            [line]: val
+                                          }
+                                        }));
+                                      }}
+                                      className="w-full bg-black/40 border border-white/10 rounded px-2 py-1 text-[10px] focus:ring-1 focus:ring-accent outline-none"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                          {Object.keys(breakpoints).length === 0 && (
+                            <div className="text-zinc-600 italic text-xs">No breakpoints set. Click the editor margin to add one.</div>
                           )}
                         </div>
                       </div>
@@ -1998,9 +2268,19 @@ export default function App() {
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
                           {pausedLine ? (
-                            <div className="flex items-center gap-3 text-[11px] font-mono text-accent bg-accent/10 p-2 rounded-lg border border-accent/20">
-                              <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                              <span>(anonymous) : line {pausedLine.line}</span>
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-3 text-[11px] font-mono text-accent bg-accent/10 p-2 rounded-lg border border-accent/20">
+                                <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                                <div className="flex flex-col">
+                                  <span className="font-bold">(anonymous)</span>
+                                  <span className="text-[9px] opacity-60">line {pausedLine.line} • depth {currentDepth}</span>
+                                </div>
+                              </div>
+                              {currentDepth > 0 && Array.from({ length: currentDepth }).map((_, i) => (
+                                <div key={i} className="flex items-center gap-3 text-[11px] font-mono opacity-30 pl-4 border-l border-white/10">
+                                  <span>caller_{currentDepth - i}</span>
+                                </div>
+                              ))}
                             </div>
                           ) : (
                             <div className="text-zinc-600 italic text-xs">Stack empty.</div>
@@ -2010,8 +2290,183 @@ export default function App() {
                     </div>
                   </motion.div>
                 )}
-              </AnimatePresence>
-            </div>
+                {activeTab === 'database' && (
+                  <motion.div
+                    key="database-content"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex flex-col h-full gap-4"
+                  >
+                    <div className="flex gap-4 h-full overflow-hidden">
+                      <div className="w-48 bg-black/20 rounded-xl border border-white/5 p-3 overflow-y-auto custom-scrollbar shrink-0">
+                        <div className="flex items-center gap-2 mb-4 opacity-50">
+                          <Database className="w-3 h-3" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest">Tables</span>
+                        </div>
+                        <div className="space-y-1">
+                          {dbTables.map(table => (
+                            <button 
+                              key={table}
+                              onClick={() => setSqlQuery(`SELECT * FROM ${table} LIMIT 10;`)}
+                              className="w-full text-left px-2 py-1.5 rounded hover:bg-white/5 text-[11px] transition-colors truncate"
+                            >
+                              {table}
+                            </button>
+                          ))}
+                          {dbTables.length === 0 && <div className="text-[10px] opacity-30 italic">No tables found</div>}
+                        </div>
+                      </div>
+                      <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">SQL Query</span>
+                            <button 
+                              onClick={executeQuery}
+                              className="px-3 py-1 bg-accent text-accent-foreground rounded-lg text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all"
+                            >
+                              Run Query
+                            </button>
+                          </div>
+                          <textarea 
+                            value={sqlQuery}
+                            onChange={(e) => setSqlQuery(e.target.value)}
+                            className="w-full h-24 bg-black/40 border border-white/10 rounded-xl p-3 text-[11px] font-mono focus:ring-1 focus:ring-accent outline-none resize-none"
+                            placeholder="Enter SQL query..."
+                          />
+                        </div>
+                        <div className="flex-1 bg-black/20 rounded-xl border border-white/5 overflow-hidden flex flex-col">
+                          <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between shrink-0">
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Results</span>
+                            {sqlResults.length > 0 && <span className="text-[9px] opacity-30">{sqlResults.length} rows</span>}
+                          </div>
+                          <div className="flex-1 overflow-auto custom-scrollbar p-4">
+                            {sqlError ? (
+                              <div className="text-red-400 text-[11px] font-mono bg-red-400/10 p-3 rounded-lg border border-red-400/20">
+                                Error: {sqlError}
+                              </div>
+                            ) : sqlResults.length > 0 ? (
+                              <table className="w-full text-[11px] font-mono border-collapse">
+                                <thead>
+                                  <tr className="border-b border-white/10">
+                                    {Object.keys(sqlResults[0]).map(key => (
+                                      <th key={key} className="text-left p-2 opacity-50 font-medium">{key}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {sqlResults.map((row, i) => (
+                                    <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                      {Object.values(row).map((val: any, j) => (
+                                        <td key={j} className="p-2 truncate max-w-[200px]">{String(val)}</td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <div className="h-full flex items-center justify-center text-[11px] opacity-30 italic">
+                                No results to display
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {activeTab === 'analytics' && (
+                  <motion.div
+                    key="analytics-content"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="h-full overflow-y-auto custom-scrollbar"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-2">
+                        <div className="flex items-center justify-between opacity-50">
+                          <span className="text-[10px] font-bold uppercase tracking-widest">Lines of Code</span>
+                          <FileCode className="w-4 h-4" />
+                        </div>
+                        <div className="text-3xl font-bold tracking-tight">{projectStats.totalLines}</div>
+                        <div className="text-[10px] text-green-400">+12% from last session</div>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-2">
+                        <div className="flex items-center justify-between opacity-50">
+                          <span className="text-[10px] font-bold uppercase tracking-widest">Total Files</span>
+                          <Folder className="w-4 h-4" />
+                        </div>
+                        <div className="text-3xl font-bold tracking-tight">{projectStats.fileCount}</div>
+                        <div className="text-[10px] text-zinc-500">Distributed across 3 directories</div>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-2">
+                        <div className="flex items-center justify-between opacity-50">
+                          <span className="text-[10px] font-bold uppercase tracking-widest">AI Interactions</span>
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        <div className="text-3xl font-bold tracking-tight">{projectStats.aiInteractions}</div>
+                        <div className="text-[10px] text-accent">Top 5% of power users</div>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-2">
+                        <div className="flex items-center justify-between opacity-50">
+                          <span className="text-[10px] font-bold uppercase tracking-widest">Code Health</span>
+                          <ShieldCheck className="w-4 h-4" />
+                        </div>
+                        <div className="text-3xl font-bold tracking-tight text-green-400">{projectStats.healthScore}%</div>
+                        <div className="text-[10px] text-green-400/70">Optimized & Secure</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+                        <h4 className="text-xs font-bold uppercase tracking-widest mb-6 opacity-50">File Distribution</h4>
+                        <div className="space-y-4">
+                          {['JavaScript', 'TypeScript', 'HTML', 'CSS'].map(lang => {
+                            const count = files.filter(f => f.language === lang.toLowerCase()).length;
+                            const percentage = Math.round((count / files.length) * 100) || 0;
+                            return (
+                              <div key={lang} className="space-y-1">
+                                <div className="flex justify-between text-[11px]">
+                                  <span>{lang}</span>
+                                  <span className="opacity-50">{percentage}%</span>
+                                </div>
+                                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                  <motion.div 
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${percentage}%` }}
+                                    className="h-full bg-accent"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+                        <h4 className="text-xs font-bold uppercase tracking-widest mb-6 opacity-50">Recent Activity</h4>
+                        <div className="space-y-4">
+                          {[
+                            { action: 'Refactored handleRun', time: '2 mins ago', type: 'AI' },
+                            { action: 'Added Database Explorer', time: '15 mins ago', type: 'User' },
+                            { action: 'Fixed debugger depth bug', time: '1 hour ago', type: 'AI' },
+                            { action: 'Initial commit', time: '3 hours ago', type: 'User' }
+                          ].map((item, i) => (
+                            <div key={i} className="flex items-center justify-between text-[11px] border-b border-white/5 pb-3 last:border-0">
+                              <div className="flex items-center gap-3">
+                                <div className={cn(
+                                  "w-2 h-2 rounded-full",
+                                  item.type === 'AI' ? "bg-accent" : "bg-zinc-500"
+                                )} />
+                                <span>{item.action}</span>
+                              </div>
+                              <span className="opacity-30">{item.time}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
 
             {/* Prompt Input */}
             <div className={cn(

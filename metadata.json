@@ -1,5 +1,7 @@
 {
   "name": "Nexus Forge: AI-Powered Multi-Language IDE",
   "description": "A professional, next-generation coding platform featuring AI-driven development, voice commands, multi-language debugging, and live web previews.",
-  "requestFramePermissions": ["microphone"]
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

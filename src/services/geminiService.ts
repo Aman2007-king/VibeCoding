@@ -193,6 +193,26 @@ export const processVoiceCommand = async (transcript: string, userKey?: string) 
   return JSON.parse(response.text);
 };
 
+export const getGhostText = async (codeBefore: string, codeAfter: string, language: string, userKey?: string) => {
+  const client = getAIClient(userKey);
+  const response = await client.models.generateContent({
+    model: "gemini-2.5-flash-lite-latest",
+    contents: `Act as an AI pair programmer. Provide a short, relevant code completion for the following context.
+    Language: ${language}
+    Code before cursor:
+    ${codeBefore}
+    Code after cursor:
+    ${codeAfter}
+    
+    Return ONLY the suggested code completion, no explanations or markdown blocks. Keep it concise.`,
+    config: {
+      temperature: 0.2,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+    }
+  });
+  return response.text;
+};
+
 export const manipulateCode = async (code: string, language: string, action: string, userKey?: string) => {
   const client = getAIClient(userKey);
   const response = await client.models.generateContent({
