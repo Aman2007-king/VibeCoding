@@ -130,7 +130,7 @@ export const generateCodeStream = async (prompt: string, language: string = "jav
 export const fastFix = async (code: string, language: string, userKey?: string) => {
   const client = getAIClient(userKey);
   const response = await client.models.generateContent({
-    model: "gemini-2.5-flash-lite-latest",
+    model: "gemini-3.1-flash-lite-preview",
     contents: `Quickly identify and fix the most obvious bug in this ${language} code. Return ONLY the fixed code.
     Code:
     ${code}`,
@@ -168,12 +168,19 @@ export const processVoiceCommand = async (transcript: string, userKey?: string) 
     - "save": Save the current file.
     - "run": Run the code or debugger.
     - "search": Search for something in the project.
+    - "create": Create a new file.
+    - "delete": Delete a file.
+    - "theme": Change the theme (e.g., "switch to midnight").
+    - "clear": Clear the terminal or console.
+    - "explain": Explain the current code or file.
+    - "review": Trigger a project review or security audit.
+    - "test": Run unit tests.
     - "other": Anything else.
 
     Return a JSON object with:
     {
-      "intent": "build" | "fix" | "open" | "save" | "run" | "search" | "other",
-      "description": "clear description of the task or parameter (e.g., filename for 'open', query for 'search')",
+      "intent": "build" | "fix" | "open" | "save" | "run" | "search" | "create" | "delete" | "theme" | "clear" | "explain" | "review" | "test" | "other",
+      "description": "clear description of the task or parameter (e.g., filename for 'open', query for 'search', theme name for 'theme')",
       "suggestedLanguage": "javascript" | "python" | "html" | etc
     }`,
     config: {
@@ -196,7 +203,7 @@ export const processVoiceCommand = async (transcript: string, userKey?: string) 
 export const getGhostText = async (codeBefore: string, codeAfter: string, language: string, userKey?: string) => {
   const client = getAIClient(userKey);
   const response = await client.models.generateContent({
-    model: "gemini-2.5-flash-lite-latest",
+    model: "gemini-3.1-flash-lite-preview",
     contents: `Act as an AI pair programmer. Provide a short, relevant code completion for the following context.
     Language: ${language}
     Code before cursor:
