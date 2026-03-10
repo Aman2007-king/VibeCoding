@@ -2,6 +2,21 @@ import { GoogleGenAI, Type, ThinkingLevel, GenerateContentResponse } from "@goog
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error: any) {
+    if (retries > 0 && (error.status === 429 || error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED'))) {
+      console.warn(`Gemini API rate limited. Retrying in ${delay}ms... (${retries} retries left)`);
+      await sleep(delay);
+      return withRetry(fn, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+};
+
 const getAIClient = (userKey?: string) => {
   if (userKey) return new GoogleGenAI({ apiKey: userKey });
   return ai;
@@ -44,7 +59,7 @@ export const generateProject = async (prompt: string, currentFiles: { name: stri
     ? `Current Project Files:\n${currentFiles.map(f => `FILE: ${f.name}\n${f.code}\n---`).join('\n')}`
     : "No existing files.";
 
-  const response = await client.models.generateContent({
+  const response = await withRetry(() => client.models.generateContent({
     model,
     contents: `Act as a senior software engineer. Generate a full project structure for the following request. 
     You MUST provide a complete, working application with multiple files organized in a logical directory structure (e.g., src/components/, src/utils/, etc.).
@@ -58,7 +73,7 @@ export const generateProject = async (prompt: string, currentFiles: { name: stri
     - "code": The complete source code for that file.
     - "language": The programming language (e.g., "javascript", "css", "html").`,
     config,
-  });
+  }));
   
   try {
     return JSON.parse(response.text);
@@ -84,13 +99,13 @@ export const generateCode = async (prompt: string, language: string = "javascrip
     config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
   }
 
-  const response = await client.models.generateContent({
+  const response = await withRetry(() => client.models.generateContent({
     model,
     contents: `Act as a senior software engineer. Generate high-quality, professional code for the following request in ${language}. 
     If the request is for a web app, provide HTML, CSS, and JS combined into a single HTML structure if possible, or separate blocks.
     Request: ${prompt}`,
     config,
-  });
+  }));
   return response.text;
 };
 
@@ -129,7 +144,7 @@ export const generateCodeStream = async (prompt: string, language: string = "jav
 
 export const fastFix = async (code: string, language: string, userKey?: string) => {
   const client = getAIClient(userKey);
-  const response = await client.models.generateContent({
+  const response = await withRetry(() => client.models.generateContent({
     model: "gemini-3.1-flash-lite-preview",
     contents: `Quickly identify and fix the most obvious bug in this ${language} code. Return ONLY the fixed code.
     Code:
@@ -137,13 +152,13 @@ export const fastFix = async (code: string, language: string, userKey?: string) 
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     }
-  });
+  }));
   return response.text;
 };
 
 export const debugCode = async (code: string, language: string, userKey?: string) => {
   const client = getAIClient(userKey);
-  const response = await client.models.generateContent({
+  const response = await withRetry(() => client.models.generateContent({
     model: "gemini-3-flash-preview", // Switched to flash for speed
     contents: `Debug the following ${language} code. Identify errors, explain them, and provide the fixed code.
     Code:
@@ -151,13 +166,13 @@ export const debugCode = async (code: string, language: string, userKey?: string
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     }
-  });
+  }));
   return response.text;
 };
 
 export const processVoiceCommand = async (transcript: string, userKey?: string) => {
   const client = getAIClient(userKey);
-  const response = await client.models.generateContent({
+  const response = await withRetry(() => client.models.generateContent({
     model: "gemini-3-flash-preview", // Switched to flash for speed
     contents: `The user said: "${transcript}". 
     Interpret this as a coding or IDE command. 
@@ -175,11 +190,13 @@ export const processVoiceCommand = async (transcript: string, userKey?: string) 
     - "explain": Explain the current code or file.
     - "review": Trigger a project review or security audit.
     - "test": Run unit tests.
+    - "dictate": Dictate code to be inserted at the cursor.
+    - "format": Format the current file.
     - "other": Anything else.
 
     Return a JSON object with:
     {
-      "intent": "build" | "fix" | "open" | "save" | "run" | "search" | "create" | "delete" | "theme" | "clear" | "explain" | "review" | "test" | "other",
+      "intent": "build" | "fix" | "open" | "save" | "run" | "search" | "create" | "delete" | "theme" | "clear" | "explain" | "review" | "test" | "dictate" | "format" | "other",
       "description": "clear description of the task or parameter (e.g., filename for 'open', query for 'search', theme name for 'theme')",
       "suggestedLanguage": "javascript" | "python" | "html" | etc
     }`,
@@ -196,13 +213,13 @@ export const processVoiceCommand = async (transcript: string, userKey?: string) 
         required: ["intent", "description", "suggestedLanguage"]
       }
     }
-  });
+  }));
   return JSON.parse(response.text);
 };
 
 export const getGhostText = async (codeBefore: string, codeAfter: string, language: string, userKey?: string) => {
   const client = getAIClient(userKey);
-  const response = await client.models.generateContent({
+  const response = await withRetry(() => client.models.generateContent({
     model: "gemini-3.1-flash-lite-preview",
     contents: `Act as an AI pair programmer. Provide a short, relevant code completion for the following context.
     Language: ${language}
@@ -216,13 +233,13 @@ export const getGhostText = async (codeBefore: string, codeAfter: string, langua
       temperature: 0.2,
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     }
-  });
+  }));
   return response.text;
 };
 
 export const manipulateCode = async (code: string, language: string, action: string, userKey?: string) => {
   const client = getAIClient(userKey);
-  const response = await client.models.generateContent({
+  const response = await withRetry(() => client.models.generateContent({
     model: "gemini-3-flash-preview", // Switched to flash for speed
     contents: `Act as a senior software engineer. Perform the following action on the provided ${language} code snippet.
     Action: ${action}
@@ -233,8 +250,55 @@ export const manipulateCode = async (code: string, language: string, action: str
     config: {
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     }
-  });
+  }));
   return response.text;
+};
+
+export const getSmartSuggestions = async (code: string, language: string, userKey?: string) => {
+  const client = getAIClient(userKey);
+  const response = await withRetry(() => client.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `Act as a senior software engineer. Analyze the following ${language} code and provide 3-5 specific, actionable suggestions for improvement. 
+    Focus on:
+    - Performance
+    - Readability
+    - Security
+    - Best practices
+    - Potential bugs
+    
+    Code:
+    ${code}
+    
+    Return a JSON array of objects:
+    [
+      {
+        "title": "Short title of the suggestion",
+        "description": "Detailed explanation of why this is better",
+        "type": "performance" | "readability" | "security" | "bug" | "best-practice",
+        "impact": "high" | "medium" | "low",
+        "suggestedCode": "The specific code snippet to apply (optional)"
+      }
+    ]`,
+    config: {
+      responseMimeType: "application/json",
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            description: { type: Type.STRING },
+            type: { type: Type.STRING },
+            impact: { type: Type.STRING },
+            suggestedCode: { type: Type.STRING }
+          },
+          required: ["title", "description", "type", "impact"]
+        }
+      }
+    }
+  }));
+  return JSON.parse(response.text);
 };
 
 export const chatWithAI = async (message: string, history: { role: string, parts: { text: string }[] }[], userKey?: string) => {

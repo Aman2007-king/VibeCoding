@@ -62,6 +62,9 @@ import {
   Moon,
   Sun,
   Monitor,
+  Tablet,
+  Smartphone,
+  Lightbulb,
   X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -69,7 +72,7 @@ import Markdown from 'react-markdown';
 import confetti from 'canvas-confetti';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject, getGhostText } from './services/geminiService';
+import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject, getGhostText, getSmartSuggestions } from './services/geminiService';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -112,6 +115,9 @@ interface FileState {
   name: string;
   code: string;
   language: string;
+  type: 'file' | 'folder';
+  parentId: number | null;
+  isOpen?: boolean;
 }
 
 interface Theme {
@@ -184,31 +190,52 @@ const THEMES: Theme[] = [
 ];
 
 // Memoized Sub-components for performance
-const FileItem = memo(({ file, isActive, onSelect, onRename, onDelete }: any) => (
-  <div 
-    className={cn(
-      "group flex items-center px-4 py-1.5 cursor-pointer transition-colors relative",
-      isActive ? "bg-accent/10 text-accent" : "hover:bg-white/5 text-text-secondary"
-    )}
-    onClick={() => onSelect(file.id)}
-  >
-    <FileCode className="w-3.5 h-3.5 mr-2 opacity-50" />
-    <input 
-      id={`file-name-${file.id}`}
-      name={`file-name-${file.id}`}
-      value={file.name}
-      onChange={(e) => onRename(file.id, e.target.value)}
-      className="bg-transparent border-none text-xs focus:ring-0 p-0 w-full"
-      onClick={(e) => e.stopPropagation()}
-    />
-    <button 
-      onClick={(e) => { e.stopPropagation(); onDelete(file.id); }}
-      className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
+const FileItem = memo(({ file, isActive, onSelect, onRename, onDelete, onToggleFolder, onDragStart, onDragOver, onDrop }: any) => {
+  const isFolder = file.type === 'folder';
+  
+  return (
+    <div 
+      draggable
+      onDragStart={(e) => onDragStart(e, file.id)}
+      onDragOver={(e) => onDragOver(e)}
+      onDrop={(e) => onDrop(e, file.id)}
+      className={cn(
+        "group flex flex-col cursor-pointer transition-colors relative",
+        isActive && !isFolder ? "bg-accent/10 text-accent" : "hover:bg-white/5 text-text-secondary"
+      )}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isFolder) {
+          onToggleFolder(file.id);
+        } else {
+          onSelect(file.id);
+        }
+      }}
     >
-      <Trash2 className="w-3 h-3" />
-    </button>
-  </div>
-));
+      <div className="flex items-center px-4 py-1.5">
+        {isFolder ? (
+          <Folder className={cn("w-3.5 h-3.5 mr-2 transition-transform", file.isOpen ? "text-accent" : "opacity-50")} />
+        ) : (
+          <FileCode className="w-3.5 h-3.5 mr-2 opacity-50" />
+        )}
+        <input 
+          id={`file-name-${file.id}`}
+          name={`file-name-${file.id}`}
+          value={file.name}
+          onChange={(e) => onRename(file.id, e.target.value)}
+          className="bg-transparent border-none text-xs focus:ring-0 p-0 w-full"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <button 
+          onClick={(e) => { e.stopPropagation(); onDelete(file.id); }}
+          className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+});
 
 const SidebarButton = memo(({ icon: Icon, active, onClick, title, className }: any) => (
   <button 
@@ -222,10 +249,12 @@ const SidebarButton = memo(({ icon: Icon, active, onClick, title, className }: a
 
 export default function App() {
   const [files, setFiles] = useState<FileState[]>([
-    { id: 1, name: 'index.html', code: '<div class="container">\n  <h1>Nexus Forge</h1>\n  <p>Multi-language combination preview</p>\n  <button id="btn">Click Me</button>\n</div>', language: 'html' },
-    { id: 2, name: 'styles.css', code: '.container {\n  padding: 2rem;\n  font-family: sans-serif;\n  text-align: center;\n  background: #f0f9ff;\n  border-radius: 1rem;\n}\nh1 { color: #0ea5e9; }', language: 'css' },
-    { id: 3, name: 'script.js', code: 'document.getElementById("btn").onclick = () => {\n  alert("Hello from Nexus Forge!");\n};', language: 'javascript' },
-    { id: 4, name: 'extra.js', code: 'console.log("Secondary script loaded");', language: 'javascript' },
+    { id: 1, name: 'index.html', code: '<div class="container">\n  <h1>Nexus Forge</h1>\n  <p>Multi-language combination preview</p>\n  <button id="btn">Click Me</button>\n</div>', language: 'html', type: 'file', parentId: null },
+    { id: 2, name: 'styles.css', code: '.container {\n  padding: 2rem;\n  font-family: sans-serif;\n  text-align: center;\n  background: #f0f9ff;\n  border-radius: 1rem;\n}\nh1 { color: #0ea5e9; }', language: 'css', type: 'file', parentId: null },
+    { id: 3, name: 'script.js', code: 'document.getElementById("btn").onclick = () => {\n  alert("Hello from Nexus Forge!");\n};', language: 'javascript', type: 'file', parentId: null },
+    { id: 4, name: 'extra.js', code: 'console.log("Secondary script loaded");', language: 'javascript', type: 'file', parentId: null },
+    { id: 5, name: 'components', code: '', language: '', type: 'folder', parentId: null, isOpen: true },
+    { id: 6, name: 'Header.js', code: 'export const Header = () => "Header";', language: 'javascript', type: 'file', parentId: 5 },
   ]);
   const [activeFileId, setActiveFileId] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -235,8 +264,8 @@ export default function App() {
   const [transcript, setTranscript] = useState('');
   const [githubToken, setGithubToken] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState('');
-  const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live' | 'command' | 'debugger' | 'database' | 'analytics' | 'review' | 'tests' | 'docs'>('editor');
-  const [prompt, setPrompt] = useState('');
+  const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live' | 'command' | 'debugger' | 'database' | 'analytics' | 'review' | 'tests' | 'docs' | 'terminal' | 'assets' | 'npm'>('editor');
+  const [aiPrompt, setAiPrompt] = useState('');
   const [useThinking, setUseThinking] = useState(false);
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model', parts: { text: string }[] }[]>([]);
   const [breakpoints, setBreakpoints] = useState<Record<number, number[]>>({});
@@ -244,6 +273,8 @@ export default function App() {
   const [debuggerStatus, setDebuggerStatus] = useState<'idle' | 'running' | 'paused'>('idle');
   const [pausedLine, setPausedLine] = useState<{ fileId: number, line: number } | null>(null);
   const [inspectedVariables, setInspectedVariables] = useState<Record<string, any>>({});
+  const [watchExpressions, setWatchExpressions] = useState<string[]>([]);
+  const [watchResults, setWatchResults] = useState<Record<string, any>>({});
   const editorRefs = useRef<Record<number, any>>({});
   const monacoRef = useRef<any>(null);
   const [isProjectMode, setIsProjectMode] = useState(false);
@@ -269,6 +300,9 @@ export default function App() {
     provider: 'guest'
   });
   const [view, setView] = useState<'ide' | 'blog' | 'about' | 'dashboard'>('ide');
+  const [isPreviewFullScreen, setIsPreviewFullScreen] = useState(false);
+  const [previewViewport, setPreviewViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  const [isDebuggerEnabled, setIsDebuggerEnabled] = useState(true);
   const [userApiKey, setUserApiKey] = useState('');
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [steppingMode, setSteppingMode] = useState<'over' | 'into' | 'out' | null>(null);
@@ -280,6 +314,21 @@ export default function App() {
   const [sqlQuery, setSqlQuery] = useState('SELECT * FROM sqlite_master;');
   const [sqlResults, setSqlResults] = useState<any[]>([]);
   const [sqlError, setSqlError] = useState<string | null>(null);
+  
+  // Assets State
+  const [assets, setAssets] = useState<{ id: string, name: string, url: string, type: string }[]>([
+    { id: '1', name: 'Nexus Logo', url: 'https://picsum.photos/seed/nexus-logo/400/400', type: 'image' },
+    { id: '2', name: 'Cyber Background', url: 'https://picsum.photos/seed/cyber-bg/1920/1080', type: 'image' },
+    { id: '3', name: 'Abstract Tech', url: 'https://picsum.photos/seed/tech-abstract/800/600', type: 'image' },
+    { id: '4', name: 'Neural Network', url: 'https://picsum.photos/seed/neural/1000/1000', type: 'image' }
+  ]);
+  const [isAddingAsset, setIsAddingAsset] = useState(false);
+  const [newAsset, setNewAsset] = useState({ name: '', url: '' });
+
+  // NPM State
+  const [npmQuery, setNpmQuery] = useState('');
+  const [npmResults, setNpmResults] = useState<any[]>([]);
+  const [isSearchingNpm, setIsSearchingNpm] = useState(false);
   const [dbTables, setDbTables] = useState<string[]>([]);
 
   // Analytics State
@@ -296,7 +345,7 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
   // Terminal State
-  const [terminalHistory, setTerminalHistory] = useState<{ cmd: string, output: string }[]>([]);
+  const [terminalHistory, setTerminalHistory] = useState<{ cmd?: string, output?: string, type?: string, content?: string, timestamp?: string }[]>([]);
   const [terminalInput, setTerminalInput] = useState('');
 
   // AI Review/Tests/Docs State
@@ -304,6 +353,48 @@ export default function App() {
   const [testResults, setTestResults] = useState<{ name: string, status: 'pass' | 'fail' | 'pending', error?: string }[]>([]);
   const [docsContent, setDocsContent] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const searchNpm = async (query: string) => {
+    if (!query) return;
+    setIsSearchingNpm(true);
+    try {
+      const response = await fetch(`https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(query)}&size=10`);
+      const data = await response.json();
+      setNpmResults(data.objects || []);
+    } catch (err) {
+      console.error('NPM search error:', err);
+    } finally {
+      setIsSearchingNpm(false);
+    }
+  };
+
+  const handleAddAsset = () => {
+    if (newAsset.name && newAsset.url) {
+      setAssets(prev => [...prev, { id: Date.now().toString(), name: newAsset.name, url: newAsset.url, type: 'image' }]);
+      setNewAsset({ name: '', url: '' });
+      setIsAddingAsset(false);
+      confetti({ particleCount: 30, spread: 50 });
+    }
+  };
+
+  const handleDeleteAsset = (id: string) => {
+    setAssets(prev => prev.filter(a => a.id !== id));
+  };
+  const [smartSuggestions, setSmartSuggestions] = useState<{ title: string, description: string, type: string, impact: string, suggestedCode?: string }[]>([]);
+
+  const fetchSmartSuggestions = async () => {
+    if (!activeFile) return;
+    setIsAnalyzing(true);
+    setActiveTab('ai'); // Switch to AI tab to show loading
+    try {
+      const suggestions = await getSmartSuggestions(activeFile.code, activeFile.language, userApiKey);
+      setSmartSuggestions(suggestions);
+      setActiveTab('ai'); // Keep it on AI tab, but we'll render suggestions there
+    } catch (err) {
+      console.error('Fetch suggestions error:', err);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   useEffect(() => {
     const newSocket = io();
@@ -390,6 +481,12 @@ export default function App() {
           const lastChar = textBefore.slice(-1);
           if (!/[ \n\t.,;({]/.test(lastChar) && textBefore.length > 0) return;
 
+          // Simple debounce: wait 500ms before calling the API
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Check if the model has changed since we started waiting (optional but good)
+          // For simplicity in this context, we'll just proceed.
+
           try {
             const suggestion = await getGhostText(
               textBefore.slice(-500), // Context window
@@ -411,7 +508,11 @@ export default function App() {
                 }
               }]
             };
-          } catch (err) {
+          } catch (err: any) {
+            // Don't spam the console with quota errors
+            if (err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
+              return; 
+            }
             console.error('Ghost Text Error:', err);
             return;
           }
@@ -581,7 +682,14 @@ export default function App() {
         setAiResponse(`Searching for: ${command.description}`);
       } else if (command.intent === 'create') {
         const newId = Math.max(...files.map(f => f.id), 0) + 1;
-        const newFile = { id: newId, name: command.description || 'untitled.js', code: '', language: command.suggestedLanguage || 'javascript' };
+        const newFile: FileState = { 
+          id: newId, 
+          name: command.description || 'untitled.js', 
+          code: '', 
+          language: command.suggestedLanguage || 'javascript',
+          type: 'file',
+          parentId: null
+        };
         setFiles(prev => [...prev, newFile]);
         setActiveFileId(newId);
         setAiResponse(`Created new file: ${newFile.name}`);
@@ -617,6 +725,29 @@ export default function App() {
       } else if (command.intent === 'test') {
         setActiveTab('tests');
         setAiResponse('Opening Automated Unit Testing...');
+      } else if (command.intent === 'dictate') {
+        const editor = editorRefs.current[activeFileId];
+        if (editor) {
+          const selection = editor.getSelection();
+          const range = new monacoRef.current.Range(
+            selection.startLineNumber,
+            selection.startColumn,
+            selection.endLineNumber,
+            selection.endColumn
+          );
+          editor.executeEdits('voice-dictation', [{
+            range,
+            text: command.description,
+            forceMoveMarkers: true
+          }]);
+          setAiResponse(`Dictated: ${command.description}`);
+        }
+      } else if (command.intent === 'format') {
+        const editor = editorRefs.current[activeFileId];
+        if (editor) {
+          editor.getAction('editor.action.formatDocument').run();
+          setAiResponse('Document formatted.');
+        }
       }
     } catch (error) {
       console.error(error);
@@ -637,14 +768,14 @@ export default function App() {
   };
 
   const handleGenerate = async () => {
-    if (!prompt) return;
+    if (!aiPrompt) return;
     setIsGenerating(true);
     setActiveTab('ai');
     setAiResponse('Nexus AI is thinking...');
     try {
       if (isProjectMode) {
         setAiResponse('Generating full project structure...');
-        const project = await generateProject(prompt, files, useThinking, userApiKey);
+        const project = await generateProject(aiPrompt, files, useThinking, userApiKey);
         
         // Update existing files and create new ones
         const newFiles = [...files];
@@ -658,7 +789,9 @@ export default function App() {
               id: newId,
               name: aiFile.name,
               code: aiFile.code,
-              language: aiFile.language
+              language: aiFile.language,
+              type: 'file',
+              parentId: null
             });
           }
         });
@@ -667,7 +800,7 @@ export default function App() {
         setAiResponse(`Project generated successfully! Created/Updated ${project.files.length} files.`);
         handleRun();
       } else {
-        const generated = await generateCodeStream(prompt, activeFile.language, useThinking, (text) => {
+        const generated = await generateCodeStream(aiPrompt, activeFile.language, useThinking, (text) => {
           setAiResponse(text);
         }, userApiKey);
         
@@ -960,6 +1093,67 @@ export default function App() {
       }
     });
 
+    // Add AI Refactor Action
+    editor.addAction({
+      id: 'nexus-ai-refactor',
+      label: 'Nexus AI: Refactor Selection',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyR],
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.5,
+      run: async (ed: any) => {
+        const selection = ed.getSelection();
+        if (selection) {
+          const selectedText = ed.getModel().getValueInRange(selection);
+          if (selectedText) {
+            setIsGenerating(true);
+            try {
+              const currentFile = files.find(f => f.id === fileId);
+              const refactored = await manipulateCode(
+                selectedText, 
+                "Refactor this code for better performance, readability, and modern standards. Keep the logic the same but improve the implementation.", 
+                currentFile?.language || 'javascript', 
+                userApiKey
+              );
+              ed.executeEdits('nexus-ai', [{
+                range: selection,
+                text: refactored,
+                forceMoveMarkers: true
+              }]);
+              confetti({ particleCount: 30, spread: 50 });
+            } catch (err) {
+              console.error('Refactor selection error:', err);
+            } finally {
+              setIsGenerating(false);
+            }
+          }
+        }
+      }
+    });
+
+    // Add AI Explain Action
+    editor.addAction({
+      id: 'nexus-ai-explain',
+      label: 'Nexus AI: Explain Selection',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.6,
+      run: async (ed: any) => {
+        const selection = ed.getSelection();
+        const selectedText = selection ? ed.getModel().getValueInRange(selection) : ed.getValue();
+        if (selectedText) {
+          setIsGenerating(true);
+          setActiveTab('ai');
+          try {
+            const explanation = await chatWithAI(`Explain this code snippet in detail:\n\n${selectedText}`, [], userApiKey);
+            setAiResponse(explanation);
+          } catch (err) {
+            console.error('Explain selection error:', err);
+          } finally {
+            setIsGenerating(false);
+          }
+        }
+      }
+    });
+
     const currentBreakpoints = breakpoints[fileId] || [];
     if (currentBreakpoints.length > 0) {
       const decorations = currentBreakpoints.map(l => ({
@@ -972,7 +1166,7 @@ export default function App() {
       }));
       editor.breakpointDecorations = editor.deltaDecorations([], decorations);
     }
-  }, [breakpoints, toggleBreakpoint]);
+  }, [breakpoints, toggleBreakpoint, files, userApiKey]);
 
   const createFile = useCallback(() => {
     setFiles(prev => {
@@ -981,12 +1175,57 @@ export default function App() {
         id: newId,
         name: `file_${newId}.js`,
         code: '// New file',
-        language: 'javascript'
+        language: 'javascript',
+        type: 'file',
+        parentId: null
       };
       setActiveFileId(newId);
       return [...prev, newFile];
     });
   }, []);
+
+  const createFolder = useCallback(() => {
+    setFiles(prev => {
+      const newId = Math.max(...prev.map(f => f.id), 0) + 1;
+      const newFolder: FileState = {
+        id: newId,
+        name: 'new-folder',
+        code: '',
+        language: '',
+        type: 'folder',
+        parentId: null,
+        isOpen: true
+      };
+      return [...prev, newFolder];
+    });
+  }, []);
+
+  const toggleFolder = useCallback((id: number) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, isOpen: !f.isOpen } : f));
+  }, []);
+
+  const handleDragStart = (e: React.DragEvent, id: number) => {
+    e.dataTransfer.setData('fileId', id.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: number) => {
+    e.preventDefault();
+    const sourceId = parseInt(e.dataTransfer.getData('fileId'));
+    const targetFile = files.find(f => f.id === targetId);
+    
+    if (sourceId === targetId) return;
+    
+    setFiles(prev => prev.map(f => {
+      if (f.id === sourceId) {
+        return { ...f, parentId: targetFile?.type === 'folder' ? targetId : targetFile?.parentId || null };
+      }
+      return f;
+    }));
+  };
 
   const deleteFile = useCallback((id: number) => {
     setFiles(prev => {
@@ -1013,20 +1252,34 @@ export default function App() {
       .join('\n');
       
     const jsFiles = files.filter(f => 
-      ['javascript', 'typescript'].includes(f.language) || 
-      f.name.toLowerCase().endsWith('.js') || 
-      f.name.toLowerCase().endsWith('.ts')
+      f.id !== htmlFileObj?.id && (
+        ['javascript', 'typescript'].includes(f.language) || 
+        f.name.toLowerCase().endsWith('.js') || 
+        f.name.toLowerCase().endsWith('.ts')
+      )
     );
 
     const instrumentedJs = jsFiles.map(file => {
-      const lines = file.code.split('\n');
+      // Escape </script> to prevent breaking the injection
+      const safeCode = file.code.replace(/<\/script>/g, '<\\/script>');
+      if (!isDebuggerEnabled) return safeCode;
+      
+      const lines = safeCode.split('\n');
       const instrumentedLines = lines.map((line, idx) => {
         const lineNum = idx + 1;
-        if (!line.trim() || line.trim().startsWith('//')) return line;
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) return line;
+        
+        // Skip lines that are likely continuations of previous lines
+        if (trimmed.startsWith('.') || trimmed.startsWith(',') || trimmed.startsWith('?') || trimmed.startsWith(':')) return line;
+        
         return `await window.nexusDebugger.sync(${file.id}, ${lineNum}, {}); ${line}`;
       });
       return `/* File: ${file.name} */\n(async () => {\n  try {\n    ${instrumentedLines.join('\n')}\n  } catch (e) {\n    console.error('Debugger Error in ${file.name}:', e);\n  }\n})();`;
     }).join('\n\n');
+
+    // Final safety check for the combined content
+    const safeInstrumentedJs = instrumentedJs.replace(/<\/script>/g, '<\\/script>');
 
     const combined = `
       <!DOCTYPE html>
@@ -1039,24 +1292,46 @@ export default function App() {
           </style>
           <script>
             window.onerror = function(msg, url, line, col, error) {
+              const errorMessage = msg === 'Script error.' 
+                ? 'Script error: The browser restricted details for a cross-origin script error. This often happens with syntax errors in injected scripts.' 
+                : msg;
               window.parent.postMessage({ 
                 type: 'PREVIEW_ERROR', 
-                error: { msg, url, line, col, stack: error?.stack }
+                error: { msg: errorMessage, url, line, col, stack: error?.stack }
               }, '*');
               return false;
             };
+            window.onunhandledrejection = function(event) {
+              window.parent.postMessage({ 
+                type: 'PREVIEW_ERROR', 
+                error: { msg: 'Unhandled Promise Rejection: ' + event.reason, stack: event.reason?.stack }
+              }, '*');
+            };
+            // Override console to capture logs
+            ['log', 'error', 'warn', 'info'].forEach(method => {
+              const original = console[method];
+              console[method] = (...args) => {
+                window.parent.postMessage({ type: 'PREVIEW_LOG', method, args: args.map(a => String(a)) }, '*');
+                original.apply(console, args);
+              };
+            });
             // Debugger bridge
             window.nexusDebugger = {
               sync: async (fileId, line, scope) => {
                 // Use Error stack to get real depth
-                const depth = new Error().stack.split('\n').length;
+                const stack = new Error().stack || '';
+                const depth = stack.split('\n').length;
                 
                 // Get condition for this line if any
-                window.parent.postMessage({ type: 'GET_BREAKPOINT_CONDITION', fileId, line, depth }, '*');
+                if (window.parent) {
+                  window.parent.postMessage({ type: 'GET_BREAKPOINT_CONDITION', fileId, line, depth }, '*');
+                }
                 
                 const shouldPause = await new Promise(resolve => {
+                  const timeout = setTimeout(() => resolve(true), 1000); // Fail-safe
                   const handler = (e) => {
                     if (e.data.type === 'BREAKPOINT_CONDITION_RESULT') {
+                      clearTimeout(timeout);
                       window.removeEventListener('message', handler);
                       const condition = e.data.condition;
                       if (condition === 'false') resolve(false);
@@ -1073,7 +1348,7 @@ export default function App() {
                   window.addEventListener('message', handler);
                 });
 
-                if (shouldPause) {
+                if (shouldPause && window.parent) {
                   window.parent.postMessage({ 
                     type: 'DEBUGGER_SYNC', 
                     fileId, 
@@ -1083,12 +1358,13 @@ export default function App() {
                   }, '*');
                   
                   return new Promise(resolve => {
-                    window.addEventListener('message', function handler(e) {
+                    const handler = (e) => {
                       if (e.data.type === 'DEBUGGER_CONTINUE') {
                         window.removeEventListener('message', handler);
                         resolve();
                       }
-                    });
+                    };
+                    window.addEventListener('message', handler);
                   });
                 }
               }
@@ -1097,8 +1373,12 @@ export default function App() {
         </head>
         <body>
           ${htmlCode}
-          <script>
-            ${instrumentedJs}
+          <script type="module">
+            try {
+              ${safeInstrumentedJs}
+            } catch (err) {
+              console.error('Runtime Error in injected scripts:', err);
+            }
           </script>
         </body>
       </html>
@@ -1167,6 +1447,18 @@ export default function App() {
         setStepping(false);
         setSteppingMode(null);
         setTargetDepth(null);
+
+        // Evaluate watch expressions
+        const results: Record<string, any> = {};
+        watchExpressions.forEach(expr => {
+          try {
+            const func = new Function(...Object.keys(scope), `return ${expr}`);
+            results[expr] = func(...Object.values(scope));
+          } catch (err) {
+            results[expr] = 'Error';
+          }
+        });
+        setWatchResults(results);
         
         // Highlight the paused line in the editor
         const editor = editorRefs.current[fileId];
@@ -1182,6 +1474,25 @@ export default function App() {
           editor.pausedDecorations = editor.deltaDecorations(editor.pausedDecorations || [], decorations);
           editor.revealLineInCenter(line);
         }
+      }
+
+      if (e.data.type === 'PREVIEW_ERROR') {
+        const { error } = e.data;
+        setTerminalHistory(prev => [...prev, {
+          type: 'error',
+          content: `[Preview Error] ${error.msg}${error.line ? ` (Line ${error.line})` : ''}`,
+          timestamp: new Date().toLocaleTimeString()
+        }]);
+        setActiveTab('terminal');
+      }
+
+      if (e.data.type === 'PREVIEW_LOG') {
+        const { method, args } = e.data;
+        setTerminalHistory(prev => [...prev, {
+          type: method === 'error' ? 'error' : method === 'warn' ? 'warn' : 'info',
+          content: `[Preview ${method.toUpperCase()}] ${args.join(' ')}`,
+          timestamp: new Date().toLocaleTimeString()
+        }]);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -1362,7 +1673,7 @@ export default function App() {
   };
 
   const COMMANDS = [
-    { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setPrompt('Build a modern landing page'); handleGenerate(); } },
+    { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setAiPrompt('Build a modern landing page'); handleGenerate(); } },
     { id: 'debug', name: 'Debug Code', icon: Bug, action: handleDebug },
     { id: 'fix', name: 'Fast Fix', icon: Zap, action: handleFastFix },
     { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
@@ -1371,7 +1682,7 @@ export default function App() {
   ];
 
   const filteredCommands = useMemo(() => [
-    { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setPrompt('Build a modern landing page'); handleGenerate(); } },
+    { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setAiPrompt('Build a modern landing page'); handleGenerate(); } },
     { id: 'debug', name: 'Debug Code', icon: Bug, action: handleDebug },
     { id: 'fix', name: 'Fast Fix', icon: Zap, action: handleFastFix },
     { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
@@ -1382,6 +1693,34 @@ export default function App() {
   ), [paletteSearch, handleGenerate, handleDebug, handleFastFix, handleShare]);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const revealLine = useCallback((fileId: number, line: number) => {
+    setActiveFileId(fileId);
+    setTimeout(() => {
+      const editor = editorRefs.current[fileId];
+      if (editor && monacoRef.current) {
+        editor.revealLineInCenter(line);
+        editor.setPosition({ lineNumber: line, column: 1 });
+        editor.focus();
+        
+        // Temporary highlight
+        const decorations = [{
+          range: new monacoRef.current.Range(line, 1, line, 1),
+          options: {
+            isWholeLine: true,
+            className: 'search-result-highlight'
+          }
+        }];
+        const oldDecorations = editor.searchDecorations || [];
+        editor.searchDecorations = editor.deltaDecorations(oldDecorations, decorations);
+        setTimeout(() => {
+          if (editor.searchDecorations) {
+            editor.searchDecorations = editor.deltaDecorations(editor.searchDecorations, []);
+          }
+        }, 2000);
+      }
+    }, 100);
+  }, []);
 
   const searchResults = useMemo(() => {
     if (!globalSearchQuery.trim()) return [];
@@ -1490,7 +1829,7 @@ export default function App() {
 
       {/* Sidebar - Navigation */}
       <aside className={cn(
-        "w-16 flex-col items-center py-6 gap-8 z-30 transition-all duration-300 overflow-y-auto glass-sidebar",
+        "w-16 flex-col items-center py-6 gap-8 z-30 transition-all duration-300 overflow-y-auto custom-scrollbar glass-sidebar",
         "fixed md:relative inset-y-0 left-0 md:flex",
         isMobileMenuOpen ? "flex translate-x-0 w-16 pt-20" : "-translate-x-full md:translate-x-0"
       )}>
@@ -1506,7 +1845,7 @@ export default function App() {
             <Play className="w-5 h-5 fill-current" />
           </button>
         </div>
-        <nav className="flex flex-col gap-6">
+        <nav className="flex flex-col gap-6 overflow-y-auto custom-scrollbar py-4">
           <SidebarButton 
             icon={Folder} 
             active={isExplorerOpen} 
@@ -1889,24 +2228,56 @@ export default function App() {
           >
             <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
               <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Explorer</span>
-              <button 
-                onClick={createFile}
-                className="p-1 hover:bg-white/5 rounded text-text-secondary hover:text-accent transition-colors"
-                title="New File"
-              >
-                <FilePlus className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={createFile}
+                  className="p-1 hover:bg-white/5 rounded text-text-secondary hover:text-accent transition-colors"
+                  title="New File"
+                >
+                  <FilePlus className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={createFolder}
+                  className="p-1 hover:bg-white/5 rounded text-text-secondary hover:text-accent transition-colors"
+                  title="New Folder"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto py-2">
-              {files.map(file => (
-                <FileItem 
-                  key={file.id}
-                  file={file}
-                  isActive={activeFileId === file.id}
-                  onSelect={setActiveFileId}
-                  onRename={renameFile}
-                  onDelete={deleteFile}
-                />
+              {files.filter(f => f.parentId === null).map(file => (
+                <div key={file.id}>
+                  <FileItem 
+                    file={file}
+                    isActive={activeFileId === file.id}
+                    onSelect={setActiveFileId}
+                    onRename={renameFile}
+                    onDelete={deleteFile}
+                    onToggleFolder={toggleFolder}
+                    onDragStart={handleDragStart}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                  />
+                  {file.type === 'folder' && file.isOpen && (
+                    <div className="pl-4 border-l border-white/5 ml-4">
+                      {files.filter(f => f.parentId === file.id).map(child => (
+                        <FileItem 
+                          key={child.id}
+                          file={child}
+                          isActive={activeFileId === child.id}
+                          onSelect={setActiveFileId}
+                          onRename={renameFile}
+                          onDelete={deleteFile}
+                          onToggleFolder={toggleFolder}
+                          onDragStart={handleDragStart}
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </motion.section>
@@ -1956,7 +2327,7 @@ export default function App() {
                       <button 
                         key={i}
                         onClick={() => {
-                          setActiveFileId(result.fileId);
+                          revealLine(result.fileId, result.line);
                         }}
                         className="w-full text-left p-2 rounded-lg hover:bg-white/5 transition-colors group"
                       >
@@ -1989,30 +2360,79 @@ export default function App() {
       </AnimatePresence>
 
       {/* Left Side - Preview (As requested by user) */}
-      <section className="w-full md:w-1/3 h-64 md:h-full border-b md:border-b-0 md:border-r border-border-custom flex flex-col bg-bg-secondary shrink-0">
-        <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
-          <span className="text-xs font-mono uppercase tracking-widest opacity-50 text-text-secondary">Live Preview</span>
-          <div className="flex gap-2">
-            <div className="w-2 h-2 rounded-full bg-red-500/50" />
-            <div className="w-2 h-2 rounded-full bg-yellow-500/50" />
-            <div className="w-2 h-2 rounded-full bg-green-500/50" />
+      <section className={cn(
+        "border-border-custom flex flex-col bg-bg-secondary shrink-0 transition-all duration-300",
+        isPreviewFullScreen 
+          ? "fixed inset-0 z-[100] w-full h-full" 
+          : "w-full md:w-1/3 h-64 md:h-full border-b md:border-b-0 md:border-r"
+      )}>
+        <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary overflow-x-auto custom-scrollbar">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono uppercase tracking-widest opacity-50 text-text-secondary">Live Preview</span>
+            {isPreviewFullScreen && (
+              <span className="px-2 py-0.5 bg-accent/20 text-accent text-[8px] font-bold rounded uppercase tracking-widest">Full Screen</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setPreviewViewport('desktop')}
+              className={cn("p-1.5 rounded-lg transition-all", previewViewport === 'desktop' ? "bg-accent/20 text-accent" : "hover:bg-white/5 text-text-secondary")}
+              title="Desktop View"
+            >
+              <Monitor className="w-3.5 h-3.5" />
+            </button>
+            <button 
+              onClick={() => setPreviewViewport('tablet')}
+              className={cn("p-1.5 rounded-lg transition-all", previewViewport === 'tablet' ? "bg-accent/20 text-accent" : "hover:bg-white/5 text-text-secondary")}
+              title="Tablet View"
+            >
+              <Tablet className="w-3.5 h-3.5" />
+            </button>
+            <button 
+              onClick={() => setPreviewViewport('mobile')}
+              className={cn("p-1.5 rounded-lg transition-all", previewViewport === 'mobile' ? "bg-accent/20 text-accent" : "hover:bg-white/5 text-text-secondary")}
+              title="Mobile View"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+            </button>
+            <div className="w-px h-4 bg-white/10 mx-1" />
+            <button 
+              onClick={() => setIsPreviewFullScreen(!isPreviewFullScreen)}
+              className="p-1.5 hover:bg-white/5 rounded-lg text-text-secondary hover:text-accent transition-all"
+              title={isPreviewFullScreen ? "Exit Full Screen" : "Full Screen"}
+            >
+              {isPreviewFullScreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+            <div className="hidden md:flex gap-1.5 ml-2">
+              <div className="w-2 h-2 rounded-full bg-red-500/50" />
+              <div className="w-2 h-2 rounded-full bg-yellow-500/50" />
+              <div className="w-2 h-2 rounded-full bg-green-500/50" />
+            </div>
           </div>
         </div>
-        <div className="flex-1 bg-white relative overflow-hidden">
-          {previewContent ? (
-            <iframe
-              srcDoc={previewContent}
-              title="preview"
-              className="w-full h-full border-none"
-              sandbox="allow-scripts"
-            />
-          ) : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-text-secondary bg-bg-secondary">
-              <Layout className="w-12 h-12 mb-4 opacity-20" />
-              <p className="text-sm font-medium opacity-40">No preview available</p>
-              <p className="text-xs opacity-30 mt-1">Generate HTML/CSS to see it here</p>
-            </div>
-          )}
+        <div className="flex-1 bg-white relative overflow-hidden flex items-center justify-center">
+          <div 
+            className="transition-all duration-500 shadow-2xl overflow-hidden bg-white h-full"
+            style={{ 
+              width: previewViewport === 'mobile' ? '375px' : previewViewport === 'tablet' ? '768px' : '100%',
+              maxWidth: '100%'
+            }}
+          >
+            {previewContent ? (
+              <iframe
+                srcDoc={previewContent}
+                title="preview"
+                className="w-full h-full border-none"
+                sandbox="allow-scripts allow-same-origin allow-modals allow-popups"
+              />
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-text-secondary bg-bg-secondary">
+                <Layout className="w-12 h-12 mb-4 opacity-20" />
+                <p className="text-sm font-medium opacity-40">No preview available</p>
+                <p className="text-xs opacity-30 mt-1">Generate HTML/CSS to see it here</p>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
@@ -2098,9 +2518,9 @@ export default function App() {
         {view === 'ide' && (
           <>
             {/* Top Header */}
-            <header className="h-16 border-b border-border-custom flex items-center px-4 md:px-6 justify-between bg-bg-secondary shrink-0 overflow-x-auto no-scrollbar">
+            <header className="h-16 border-b border-border-custom flex items-center px-4 md:px-6 justify-between bg-bg-secondary shrink-0 overflow-x-auto custom-scrollbar">
           <div className="flex items-center gap-2 md:gap-4 min-w-max">
-            <div className="flex bg-white/5 rounded-lg p-1 border border-white/10 overflow-x-auto no-scrollbar max-w-[300px] md:max-w-none">
+            <div className="flex bg-white/5 rounded-lg p-1 border border-white/10 overflow-x-auto custom-scrollbar max-w-[300px] md:max-w-none">
               {files.map(file => (
                 <button
                   key={file.id}
@@ -2184,6 +2604,15 @@ export default function App() {
             </div>
             <div className="flex items-center gap-4">
               <button 
+                onClick={fetchSmartSuggestions}
+                disabled={isAnalyzing}
+                className="p-1.5 hover:bg-white/5 rounded-lg text-accent transition-all group relative"
+                title="AI Smart Suggestions"
+              >
+                {isAnalyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Lightbulb className="w-3.5 h-3.5" />}
+                <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-bg-secondary border border-white/10 rounded text-[9px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">Smart Suggestions</span>
+              </button>
+              <button 
                 onClick={handleMagicRefactor}
                 disabled={isGenerating}
                 className="p-1.5 hover:bg-white/5 rounded-lg text-accent transition-all group relative"
@@ -2251,9 +2680,9 @@ export default function App() {
         </div>
 
         {/* Bottom Panel - AI & Prompt */}
-        <footer className="h-80 border-t border-border-custom flex flex-col bg-bg-secondary shrink-0">
-          <div className="flex border-b border-border-custom overflow-x-auto no-scrollbar shrink-0">
-            {['ai', 'chat', 'live', 'editor', 'debugger', 'database', 'analytics', 'review', 'tests', 'docs', 'command'].map((tab) => (
+        <footer className="h-96 border-t border-border-custom flex flex-col bg-bg-secondary shrink-0">
+          <div className="flex border-b border-border-custom overflow-x-auto custom-scrollbar shrink-0">
+            {['ai', 'chat', 'live', 'editor', 'debugger', 'database', 'analytics', 'review', 'tests', 'docs', 'assets', 'npm', 'command'].map((tab) => (
               <button 
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
@@ -2263,7 +2692,7 @@ export default function App() {
                   tab === 'command' && "md:hidden"
                 )}
               >
-                {tab === 'ai' ? 'AI Assistant' : tab === 'live' ? 'Live AI' : tab}
+                {tab === 'ai' ? 'AI Assistant' : tab === 'live' ? 'Live AI' : tab === 'npm' ? 'NPM Search' : tab}
                 {activeTab === tab && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />}
               </button>
             ))}
@@ -2272,7 +2701,7 @@ export default function App() {
           <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-bg-secondary/50 backdrop-blur-md">
             {/* Content Area */}
             <div className={cn(
-              "flex-1 overflow-y-auto p-4 font-mono text-sm custom-scrollbar",
+              "flex-1 flex flex-col overflow-hidden p-4 font-mono text-sm",
               activeTab === 'command' ? "hidden md:block" : "block"
             )}>
               <AnimatePresence mode="wait">
@@ -2282,12 +2711,84 @@ export default function App() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="prose prose-invert prose-sm max-w-none"
+                    className="flex-1 overflow-y-auto custom-scrollbar prose prose-invert prose-sm max-w-none"
                   >
-                    {isGenerating || isDebugging ? (
+                    {isGenerating || isDebugging || isAnalyzing ? (
                       <div className="flex items-center gap-3 text-accent">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         <span>Nexus AI is processing...</span>
+                      </div>
+                    ) : smartSuggestions.length > 0 ? (
+                      <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-sm font-bold uppercase tracking-widest text-accent flex items-center gap-2">
+                            <Lightbulb className="w-4 h-4" />
+                            Smart Suggestions for {activeFile?.name}
+                          </h3>
+                          <button 
+                            onClick={() => setSmartSuggestions([])}
+                            className="text-[10px] opacity-40 hover:opacity-100 uppercase tracking-widest"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {smartSuggestions.map((suggestion, i) => (
+                            <motion.div 
+                              key={i}
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ delay: i * 0.1 }}
+                              className="bg-white/5 border border-white/10 rounded-xl p-4 hover:border-accent/30 transition-all group"
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <span className={cn(
+                                  "text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded",
+                                  suggestion.type === 'bug' ? "bg-red-500/20 text-red-400" :
+                                  suggestion.type === 'performance' ? "bg-yellow-500/20 text-yellow-400" :
+                                  suggestion.type === 'security' ? "bg-purple-500/20 text-purple-400" :
+                                  "bg-blue-500/20 text-blue-400"
+                                )}>
+                                  {suggestion.type}
+                                </span>
+                                <span className={cn(
+                                  "text-[8px] font-bold uppercase tracking-widest",
+                                  suggestion.impact === 'high' ? "text-red-400" :
+                                  suggestion.impact === 'medium' ? "text-yellow-400" :
+                                  "text-green-400"
+                                )}>
+                                  {suggestion.impact} impact
+                                </span>
+                              </div>
+                              <h4 className="text-xs font-bold text-white mb-1">{suggestion.title}</h4>
+                              <p className="text-[11px] text-text-secondary mb-3 leading-relaxed">{suggestion.description}</p>
+                              {suggestion.suggestedCode && (
+                                <div className="relative">
+                                  <SyntaxHighlighter
+                                    style={vscDarkPlus}
+                                    language={activeFile?.language || 'javascript'}
+                                    className="!bg-black/40 !p-3 rounded-lg !text-[10px] border border-white/5"
+                                  >
+                                    {suggestion.suggestedCode}
+                                  </SyntaxHighlighter>
+                                  <button 
+                                    onClick={() => {
+                                      if (activeFile && suggestion.suggestedCode) {
+                                        // Simple insertion for now, or we could replace
+                                        updateFile(activeFileId, { code: activeFile.code + '\n\n' + suggestion.suggestedCode });
+                                        alert('Code added to file!');
+                                      }
+                                    }}
+                                    className="absolute bottom-2 right-2 p-1.5 bg-accent text-accent-foreground rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                                    title="Apply Suggestion"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </motion.div>
+                          ))}
+                        </div>
                       </div>
                     ) : aiResponse ? (
                       <Markdown
@@ -2340,9 +2841,9 @@ export default function App() {
                     key="chat-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="flex flex-col h-full"
+                    className="flex-1 flex flex-col overflow-hidden"
                   >
-                    <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
+                    <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 custom-scrollbar">
                       {chatHistory.map((msg, i) => (
                         <div key={i} className={cn("flex gap-3", msg.role === 'user' ? "justify-end" : "justify-start")}>
                           <div className={cn(
@@ -2420,7 +2921,7 @@ export default function App() {
                     key="live-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="flex flex-col items-center justify-center h-full gap-6"
+                    className="flex-1 flex flex-col items-center justify-center gap-6 overflow-y-auto custom-scrollbar"
                   >
                     <div className="relative">
                       <div className={cn(
@@ -2461,7 +2962,7 @@ export default function App() {
                     key="debugger-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="flex flex-col h-full"
+                    className="flex-1 flex flex-col overflow-hidden"
                   >
                     <div className="flex items-center justify-between mb-4 bg-white/5 p-3 rounded-xl border border-white/10">
                       <div className="flex items-center gap-4">
@@ -2472,6 +2973,27 @@ export default function App() {
                           )} />
                           <span className="text-xs font-bold uppercase tracking-widest">{debuggerStatus}</span>
                         </div>
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                          <div className="relative">
+                            <input 
+                              type="checkbox" 
+                              className="sr-only" 
+                              checked={isDebuggerEnabled}
+                              onChange={(e) => setIsDebuggerEnabled(e.target.checked)}
+                            />
+                            <div className={cn(
+                              "w-8 h-4 rounded-full transition-colors",
+                              isDebuggerEnabled ? "bg-accent" : "bg-white/10"
+                            )} />
+                            <div className={cn(
+                              "absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform",
+                              isDebuggerEnabled ? "translate-x-4" : "translate-x-0"
+                            )} />
+                          </div>
+                          <span className="text-[10px] font-bold uppercase tracking-widest opacity-50 group-hover:opacity-100 transition-opacity">
+                            Enable Debugger
+                          </span>
+                        </label>
                         {pausedLine && (
                           <span className="text-xs text-text-secondary">
                             Paused at line <span className="text-accent">{pausedLine.line}</span>
@@ -2529,6 +3051,41 @@ export default function App() {
                     <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 overflow-hidden">
                       <div className="flex flex-col bg-black/20 rounded-xl border border-white/5 overflow-hidden">
                         <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Watch</span>
+                          <button 
+                            onClick={() => {
+                              const expr = window.prompt('Enter expression to watch:');
+                              if (expr) setWatchExpressions(prev => [...prev, expr]);
+                            }}
+                            className="p-1 hover:bg-white/5 rounded text-accent"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                          {watchExpressions.map((expr, i) => (
+                            <div key={i} className="flex flex-col gap-1 text-[11px] font-mono group border-b border-white/5 pb-2 last:border-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-purple-400 font-bold truncate">{expr}</span>
+                                <button 
+                                  onClick={() => setWatchExpressions(prev => prev.filter((_, idx) => idx !== i))}
+                                  className="opacity-0 group-hover:opacity-100 text-red-400"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                              <div className="text-text-secondary break-all pl-2 border-l border-white/10 text-[10px]">
+                                {debuggerStatus === 'paused' ? `${watchResults[expr] ?? 'Evaluating...'}` : '---'}
+                              </div>
+                            </div>
+                          ))}
+                          {watchExpressions.length === 0 && (
+                            <div className="text-zinc-600 italic text-xs">No watch expressions.</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col bg-black/20 rounded-xl border border-white/5 overflow-hidden">
+                        <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
                           <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Variables</span>
                           <span className="text-[9px] font-mono opacity-30">Global Scope</span>
                         </div>
@@ -2545,7 +3102,7 @@ export default function App() {
                                   <div className="text-text-secondary break-all pl-2 border-l border-white/10">
                                     {typeof value === 'object' && value !== null 
                                       ? <pre className="text-[10px] whitespace-pre-wrap">{JSON.stringify(value, (k, v) => typeof v === 'function' ? '[Function]' : v, 2)}</pre> 
-                                      : String(value)}
+                                      : `${value}`}
                                   </div>
                                 </div>
                               ))
@@ -2636,7 +3193,7 @@ export default function App() {
                     key="database-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="flex flex-col h-full gap-4"
+                    className="flex-1 flex flex-col gap-4 overflow-hidden"
                   >
                     <div className="flex gap-4 h-full overflow-hidden">
                       <div className="w-48 bg-black/20 rounded-xl border border-white/5 p-3 overflow-y-auto custom-scrollbar shrink-0">
@@ -2700,7 +3257,7 @@ export default function App() {
                                   {sqlResults.map((row, i) => (
                                     <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                       {Object.values(row).map((val: any, j) => (
-                                        <td key={j} className="p-2 truncate max-w-[200px]">{String(val)}</td>
+                                        <td key={j} className="p-2 truncate max-w-[200px]">{`${val}`}</td>
                                       ))}
                                     </tr>
                                   ))}
@@ -2723,7 +3280,7 @@ export default function App() {
                     key="analytics-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="h-full overflow-y-auto custom-scrollbar"
+                    className="flex-1 overflow-y-auto custom-scrollbar"
                   >
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-2">
@@ -2816,7 +3373,7 @@ export default function App() {
                     key="review-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="h-full flex flex-col gap-4"
+                    className="flex-1 flex flex-col gap-4 overflow-hidden"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -2850,7 +3407,7 @@ export default function App() {
                     key="tests-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="h-full flex flex-col gap-4"
+                    className="flex-1 flex flex-col gap-4 overflow-hidden"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -2922,7 +3479,7 @@ export default function App() {
                     key="docs-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="h-full flex flex-col gap-4"
+                    className="flex-1 flex flex-col gap-4 overflow-hidden"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -2945,6 +3502,166 @@ export default function App() {
                         <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-30">
                           <BookOpen className="w-12 h-12" />
                           <p className="text-xs max-w-xs">Generate documentation to see an interactive guide for your project's APIs and logic.</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+
+                {activeTab === 'assets' && (
+                  <motion.div
+                    key="assets-content"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="h-full flex flex-col gap-4 overflow-hidden"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-2">
+                        <Palette className="w-4 h-4 text-accent" />
+                        <h3 className="text-sm font-bold uppercase tracking-widest">Asset Manager</h3>
+                      </div>
+                      <button 
+                        onClick={() => setIsAddingAsset(!isAddingAsset)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2",
+                          isAddingAsset ? "bg-red-500/20 text-red-400 border border-red-500/30" : "bg-accent text-accent-foreground shadow-lg shadow-accent/20"
+                        )}
+                      >
+                        {isAddingAsset ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                        {isAddingAsset ? "Cancel" : "Add Asset"}
+                      </button>
+                    </div>
+
+                    {isAddingAsset && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4"
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] uppercase tracking-widest opacity-40">Asset Name</label>
+                            <input 
+                              value={newAsset.name}
+                              onChange={(e) => setNewAsset(prev => ({ ...prev, name: e.target.value }))}
+                              placeholder="e.g. Hero Image"
+                              className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-accent"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] uppercase tracking-widest opacity-40">Asset URL</label>
+                            <input 
+                              value={newAsset.url}
+                              onChange={(e) => setNewAsset(prev => ({ ...prev, url: e.target.value }))}
+                              placeholder="https://..."
+                              className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-accent"
+                            />
+                          </div>
+                        </div>
+                        <button 
+                          onClick={handleAddAsset}
+                          disabled={!newAsset.name || !newAsset.url}
+                          className="w-full py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold uppercase tracking-widest disabled:opacity-30"
+                        >
+                          Confirm Add Asset
+                        </button>
+                      </motion.div>
+                    )}
+
+                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 overflow-y-auto custom-scrollbar p-1">
+                      {assets.map((asset) => (
+                        <div key={asset.id} className="group relative bg-white/5 border border-white/10 rounded-xl overflow-hidden hover:border-accent/50 transition-all aspect-square">
+                          <img src={asset.url} alt={asset.name} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
+                          
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => handleDeleteAsset(asset.id)}
+                              className="p-1.5 bg-red-500/80 text-white rounded-lg hover:bg-red-500 transition-colors"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          <div className="absolute inset-x-0 bottom-0 p-2 bg-black/80 backdrop-blur-md translate-y-full group-hover:translate-y-0 transition-transform">
+                            <p className="text-[9px] font-bold text-white truncate mb-2">{asset.name}</p>
+                            <div className="flex gap-1">
+                              <button 
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`<img src="${asset.url}" alt="${asset.name}" referrerPolicy="no-referrer" />`);
+                                  alert('HTML tag copied!');
+                                }}
+                                className="flex-1 py-1 bg-accent text-accent-foreground rounded text-[8px] font-bold uppercase"
+                              >
+                                Tag
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  navigator.clipboard.writeText(asset.url);
+                                  alert('URL copied!');
+                                }}
+                                className="flex-1 py-1 bg-white/10 text-white rounded text-[8px] font-bold uppercase"
+                              >
+                                URL
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
+                {activeTab === 'npm' && (
+                  <motion.div
+                    key="npm-content"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex-1 flex flex-col gap-4 overflow-hidden"
+                  >
+                    <div className="flex items-center gap-4 bg-white/5 p-3 rounded-xl border border-white/10">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" />
+                        <input 
+                          placeholder="Search NPM packages..."
+                          className="w-full bg-black/20 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-xs outline-none focus:ring-1 focus:ring-accent"
+                          value={npmQuery}
+                          onChange={(e) => setNpmQuery(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && searchNpm(npmQuery)}
+                        />
+                      </div>
+                      <button 
+                        onClick={() => searchNpm(npmQuery)}
+                        disabled={isSearchingNpm}
+                        className="px-6 py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 disabled:opacity-50"
+                      >
+                        {isSearchingNpm ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
+                      {npmResults.map((result: any) => (
+                        <div key={result.package.name} className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-all">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="text-sm font-bold text-white">{result.package.name}</h4>
+                              <span className="text-[10px] opacity-40">v{result.package.version}</span>
+                            </div>
+                            <p className="text-xs text-text-secondary line-clamp-1 max-w-xl">{result.package.description}</p>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              alert(`Simulated installation of ${result.package.name}`);
+                              // In a real app, we'd update package.json or trigger a backend install
+                            }}
+                            className="px-4 py-1.5 bg-white/5 hover:bg-accent hover:text-accent-foreground rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all"
+                          >
+                            Install
+                          </button>
+                        </div>
+                      ))}
+                      {npmResults.length === 0 && !isSearchingNpm && (
+                        <div className="h-full flex flex-col items-center justify-center opacity-20 italic text-xs">
+                          <Search className="w-12 h-12 mb-4" />
+                          <p>Search for packages to add to your project</p>
                         </div>
                       )}
                     </div>
@@ -3037,8 +3754,8 @@ export default function App() {
                 <textarea 
                   id="ai-prompt"
                   name="ai-prompt"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
                   placeholder="Describe what to build..."
                   className="w-full h-full bg-white/5 rounded-xl p-3 text-xs md:text-sm border border-white/10 focus:border-accent/50 focus:ring-0 resize-none transition-all placeholder:opacity-20"
                 />
@@ -3054,7 +3771,7 @@ export default function App() {
               </div>
               <button 
                 onClick={handleGenerate}
-                disabled={isGenerating || !prompt}
+                disabled={isGenerating || !aiPrompt}
                 className="w-full py-2.5 md:py-3 bg-accent text-accent-foreground rounded-lg text-[10px] md:text-xs font-bold hover:opacity-90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
