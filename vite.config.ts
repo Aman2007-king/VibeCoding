@@ -9,10 +9,21 @@ export default defineConfig(({mode}) => {
     base: '/',
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env': {},
-      'process.env.NODE_ENV': JSON.stringify(mode),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'global': 'window',
+      'process.env': {
+        NODE_ENV: JSON.stringify(mode),
+        GEMINI_API_KEY: JSON.stringify(env.GEMINI_API_KEY),
+      },
+      'global': 'globalThis',
+    },
+    optimizeDeps: {
+      include: [
+        'react-syntax-highlighter',
+        'react-syntax-highlighter/dist/esm/styles/prism',
+        'socket.io-client',
+        'canvas-confetti',
+        'framer-motion',
+        'motion',
+      ],
     },
     resolve: {
       alias: {

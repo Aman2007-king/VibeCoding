@@ -325,6 +325,7 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
 };
 
 export default function App() {
+  console.log("App component rendering...");
   const [files, setFiles] = useState<FileState[]>([
     { id: 1, name: 'index.html', code: '<div class="container">\n  <h1>Nexus Forge</h1>\n  <p>Multi-language combination preview</p>\n  <button id="btn">Click Me</button>\n</div>', language: 'html', type: 'file', parentId: null },
     { id: 2, name: 'styles.css', code: '.container {\n  padding: 2rem;\n  font-family: sans-serif;\n  text-align: center;\n  background: #f0f9ff;\n  border-radius: 1rem;\n}\nh1 { color: #0ea5e9; }', language: 'css', type: 'file', parentId: null },
