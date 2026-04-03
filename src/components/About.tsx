@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Mail, Phone, MapPin, Code2, Cpu, Globe, Heart, ArrowLeft } from 'lucide-react';
 
 export default function About({ onBack }: { onBack: () => void }) {

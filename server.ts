@@ -283,6 +283,14 @@ async function startServer() {
       socket.broadcast.emit("cursor:move", { userId: socket.id, fileId, position });
     });
 
+    socket.on("whiteboard:update", (data) => {
+      socket.broadcast.emit("whiteboard:update", data);
+    });
+
+    socket.on("whiteboard:clear", () => {
+      socket.broadcast.emit("whiteboard:clear");
+    });
+
     socket.on("disconnect", () => {
       delete projectState.cursors[socket.id];
       io.emit("user:leave", socket.id);

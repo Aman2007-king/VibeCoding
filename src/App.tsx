@@ -65,23 +65,26 @@ import {
   Tablet,
   Smartphone,
   Lightbulb,
-  X
+  X,
+  Info,
+  Globe,
+  PenTool,
+  Server,
+  FileText,
+  Lock
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Markdown from 'react-markdown';
 import confetti from 'canvas-confetti';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { cn } from './lib/utils';
 import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject, getGhostText, getSmartSuggestions } from './services/geminiService';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Blog from './components/Blog';
 import About from './components/About';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import { ApiPlayground } from './components/ApiPlayground';
+import { Whiteboard } from './components/Whiteboard';
 
 const LANGUAGES = [
   { id: 'javascript', name: 'JavaScript' },
@@ -109,6 +112,35 @@ const LANGUAGES = [
   { id: 'scss', name: 'SCSS' },
   { id: 'less', name: 'Less' },
 ];
+
+const getLanguageFromFilename = (filename: string): string => {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  if (!ext) return 'javascript';
+  const mapping: Record<string, string> = {
+    'js': 'javascript',
+    'jsx': 'javascript',
+    'ts': 'typescript',
+    'tsx': 'typescript',
+    'html': 'html',
+    'css': 'css',
+    'json': 'json',
+    'py': 'python',
+    'cpp': 'cpp',
+    'cc': 'cpp',
+    'java': 'java',
+    'go': 'go',
+    'rs': 'rust',
+    'php': 'php',
+    'sql': 'sql',
+    'md': 'markdown',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'xml': 'xml',
+    'scss': 'scss',
+    'less': 'less'
+  };
+  return mapping[ext] || 'javascript';
+};
 
 interface FileState {
   id: number;
@@ -247,6 +279,51 @@ const SidebarButton = memo(({ icon: Icon, active, onClick, title, className }: a
   </button>
 ));
 
+const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, depth?: number }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const isObject = typeof value === 'object' && value !== null;
+  const isArray = Array.isArray(value);
+  
+  return (
+    <div className={cn(
+      "flex flex-col gap-1 text-[11px] font-mono group border-b border-white/5 pb-2 last:border-0",
+      depth > 0 && "ml-3 border-l border-white/10 pl-2"
+    )}>
+      <div className="flex items-center gap-2">
+        {isObject && Object.keys(value).length > 0 && (
+          <button 
+            onClick={() => setIsOpen(!isOpen)} 
+            className="p-0.5 hover:bg-white/10 rounded text-accent transition-colors"
+          >
+            {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+        )}
+        <span className="text-blue-400 shrink-0 font-bold">{name}:</span>
+        <span className="text-zinc-500 text-[9px] italic">
+          ({isArray ? `Array(${value.length})` : typeof value})
+        </span>
+        {!isObject && (
+          <span className={cn(
+            "truncate",
+            typeof value === 'string' ? "text-green-400" : 
+            typeof value === 'number' ? "text-orange-400" : 
+            typeof value === 'boolean' ? "text-purple-400" : "text-text-secondary"
+          )}>
+            {typeof value === 'string' ? `"${value}"` : String(value)}
+          </span>
+        )}
+      </div>
+      {isObject && isOpen && (
+        <div className="space-y-1 mt-1">
+          {Object.entries(value).map(([k, v]) => (
+            <VariableItem key={k} name={k} value={v} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function App() {
   const [files, setFiles] = useState<FileState[]>([
     { id: 1, name: 'index.html', code: '<div class="container">\n  <h1>Nexus Forge</h1>\n  <p>Multi-language combination preview</p>\n  <button id="btn">Click Me</button>\n</div>', language: 'html', type: 'file', parentId: null },
@@ -258,6 +335,15 @@ export default function App() {
   ]);
   const [activeFileId, setActiveFileId] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [toasts, setToasts] = useState<{ id: string, message: string, type: 'success' | 'error' | 'info' }[]>([]);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+  };
   const [isDebugging, setIsDebugging] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -275,10 +361,13 @@ export default function App() {
   const [inspectedVariables, setInspectedVariables] = useState<Record<string, any>>({});
   const [watchExpressions, setWatchExpressions] = useState<string[]>([]);
   const [watchResults, setWatchResults] = useState<Record<string, any>>({});
+  const [variableSearch, setVariableSearch] = useState('');
   const editorRefs = useRef<Record<number, any>>({});
   const monacoRef = useRef<any>(null);
   const [isProjectMode, setIsProjectMode] = useState(false);
   const [chatInput, setChatInput] = useState('');
+  const [isChatStreaming, setIsChatStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [liveTranscription, setLiveTranscription] = useState<string[]>([]);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
@@ -288,6 +377,14 @@ export default function App() {
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [currentTheme, setCurrentTheme] = useState<Theme>(THEMES[0]);
   const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
+  const [isApiPlaygroundOpen, setIsApiPlaygroundOpen] = useState(false);
+  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
+  const [apiMethod, setApiMethod] = useState<'GET' | 'POST' | 'PUT' | 'DELETE'>('GET');
+  const [apiUrl, setApiUrl] = useState('');
+  const [apiHeaders, setApiHeaders] = useState<{ key: string, value: string }[]>([{ key: 'Content-Type', value: 'application/json' }]);
+  const [apiBody, setApiBody] = useState('');
+  const [apiResponse, setApiResponse] = useState<any>(null);
+  const [isApiLoading, setIsApiLoading] = useState(false);
   const [isSourceControlOpen, setIsSourceControlOpen] = useState(false);
   const [stagedFiles, setStagedFiles] = useState<Set<number>>(new Set());
   const [commitMessage, setCommitMessage] = useState('');
@@ -850,9 +947,17 @@ export default function App() {
   };
 
   const handleChatSend = async () => {
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || isChatStreaming) return;
     const userMsg = chatInput;
     setChatInput('');
+    setIsChatStreaming(true);
+    
+    // Create the history for the AI (everything before this message)
+    const historyForAI = chatHistory.map(h => ({ 
+      role: h.role === 'user' ? 'user' : 'model', 
+      parts: h.parts 
+    }));
+
     setChatHistory(prev => [...prev, { role: 'user', parts: [{ text: userMsg }] }]);
     
     // Add a placeholder for AI response
@@ -861,11 +966,13 @@ export default function App() {
     try {
       await chatWithAIStream(
         userMsg, 
-        chatHistory.map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: h.parts })),
+        historyForAI,
         (text) => {
           setChatHistory(prev => {
             const newHistory = [...prev];
-            newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text }] };
+            if (newHistory.length > 0) {
+              newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text }] };
+            }
             return newHistory;
           });
         },
@@ -874,9 +981,46 @@ export default function App() {
     } catch (error) {
       setChatHistory(prev => {
         const newHistory = [...prev];
-        newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text: 'Error connecting to Nexus AI.' }] };
+        if (newHistory.length > 0) {
+          newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text: 'Error connecting to Nexus AI. Please check your API key and connection.' }] };
+        }
         return newHistory;
       });
+    } finally {
+      setIsChatStreaming(false);
+    }
+  };
+
+  const clearChatHistory = () => {
+    setChatHistory([]);
+    showToast('Chat history cleared', 'info');
+  };
+
+  const handleApplyBoilerplate = async (pattern: string) => {
+    setAiPrompt(`Generate boilerplate for: ${pattern}`);
+    setIsGenerating(true);
+    setActiveTab('ai');
+    setAiResponse('');
+    
+    try {
+      let fullResponse = '';
+      await generateCodeStream(
+        `Generate a high-quality, production-ready boilerplate for: ${pattern}. 
+         Include best practices, error handling, and modern syntax. 
+         Provide only the code block if possible, or a brief explanation followed by the code.`,
+        activeFile?.language || 'javascript',
+        useThinking,
+        (chunk) => {
+          fullResponse += chunk;
+          setAiResponse(fullResponse);
+        },
+        userApiKey
+      );
+      showToast(`${pattern} boilerplate generated!`, 'success');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -958,7 +1102,7 @@ export default function App() {
         });
       } else {
         await navigator.clipboard.writeText(shareUrl);
-        alert('Project link copied to clipboard!');
+      showToast('Project link copied to clipboard!', 'success');
       }
     } catch (err) {
       console.error('Share failed:', err);
@@ -969,7 +1113,7 @@ export default function App() {
       textArea.select();
       document.execCommand("copy");
       document.body.removeChild(textArea);
-      alert('Project link copied to clipboard!');
+      showToast('Project link copied to clipboard!', 'success');
     }
   }, []);
 
@@ -985,16 +1129,16 @@ export default function App() {
     setCommitHistory(prev => [newCommit, ...prev]);
     setCommitMessage('');
     setStagedFiles(new Set());
-    alert(`Committed: ${newCommit.message}`);
+    showToast(`Committed: ${newCommit.message}`, 'success');
   };
 
   const handleGitPush = async () => {
     if (!githubToken) {
-      alert('Please connect your GitHub account first.');
+      showToast('Please connect your GitHub account first.', 'error');
       return;
     }
     
-    alert('Pushing to GitHub... (Simulated via API)');
+    showToast('Pushing to GitHub... (Simulated via API)', 'info');
     // In a real app, we would use octokit to create a repo or update files
     // For this demo, we'll simulate the success
     setTimeout(() => {
@@ -1003,7 +1147,7 @@ export default function App() {
         spread: 70,
         origin: { y: 0.6 }
       });
-      alert('Successfully pushed to GitHub!');
+      showToast('Successfully pushed to GitHub!', 'success');
     }, 1500);
   };
 
@@ -1022,7 +1166,7 @@ export default function App() {
     const selectedText = editor.getModel().getValueInRange(selection);
     
     if (!selectedText) {
-      alert('Please select some code first.');
+      showToast('Please select some code first.', 'error');
       return;
     }
 
@@ -1239,12 +1383,76 @@ export default function App() {
   }, [activeFileId]);
 
   const renameFile = useCallback((id: number, newName: string) => {
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+    setFiles(prev => prev.map(f => {
+      if (f.id === id) {
+        const language = getLanguageFromFilename(newName);
+        return { ...f, name: newName, language };
+      }
+      return f;
+    }));
   }, []);
 
-  const handleRun = useCallback(() => {
+  const handleApiRequest = async () => {
+    setIsApiLoading(true);
+    setApiResponse(null);
+    try {
+      const headersObj = apiHeaders.reduce((acc, h) => {
+        if (h.key) acc[h.key] = h.value;
+        return acc;
+      }, {} as Record<string, string>);
+
+      const options: RequestInit = {
+        method: apiMethod,
+        headers: headersObj,
+      };
+
+      if (apiMethod !== 'GET' && apiBody) {
+        options.body = apiBody;
+      }
+
+      const startTime = performance.now();
+      const response = await fetch(apiUrl, options);
+      const endTime = performance.now();
+      
+      const contentType = response.headers.get('content-type');
+      let data;
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        data = await response.text();
+      }
+
+      setApiResponse({
+        status: response.status,
+        statusText: response.statusText,
+        time: Math.round(endTime - startTime),
+        data,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+      showToast(`Request completed: ${response.status}`, response.ok ? 'success' : 'error');
+    } catch (err: any) {
+      setApiResponse({ error: err.message });
+      showToast(err.message, 'error');
+    } finally {
+      setIsApiLoading(false);
+    }
+  };
+
+  const handleRun = useCallback((arg?: boolean | React.MouseEvent) => {
+    const showConfetti = typeof arg === 'boolean' ? arg : true;
     const htmlFileObj = files.find(f => f.name.toLowerCase() === 'index.html') || files.find(f => f.language === 'html');
-    const htmlCode = htmlFileObj?.code || '';
+    const htmlCode = htmlFileObj?.code || `
+      <div style="padding: 2rem; font-family: ui-sans-serif, system-ui, sans-serif; background: #0A0A0B; color: #ffffff; min-height: 100vh;">
+        <div style="max-width: 600px; margin: 0 auto; border: 1px solid rgba(255,255,255,0.1); padding: 2rem; border-radius: 1rem; background: #0D0D0E;">
+          <h1 style="color: #10b981; margin-top: 0; font-size: 1.5rem;">Nexus Forge Preview</h1>
+          <p style="color: #a1a1aa; font-size: 0.875rem;">No <code>index.html</code> found. Your scripts are running in the background.</p>
+          <div style="margin-top: 2rem; padding: 1rem; background: #000; border-radius: 0.5rem; font-family: monospace; font-size: 0.75rem; color: #10b981; border: 1px solid #10b981/20;">
+            <div style="opacity: 0.5; margin-bottom: 0.5rem;">// Console Output</div>
+            <div id="nexus-console"></div>
+          </div>
+        </div>
+      </div>
+    `;
     
     const cssCode = files
       .filter(f => f.language === 'css' || f.name.toLowerCase().endsWith('.css'))
@@ -1253,33 +1461,83 @@ export default function App() {
       
     const jsFiles = files.filter(f => 
       f.id !== htmlFileObj?.id && (
-        ['javascript', 'typescript'].includes(f.language) || 
+        ['javascript', 'typescript', 'json'].includes(f.language) || 
         f.name.toLowerCase().endsWith('.js') || 
-        f.name.toLowerCase().endsWith('.ts')
+        f.name.toLowerCase().endsWith('.ts') ||
+        f.name.toLowerCase().endsWith('.json')
       )
     );
 
+    const allImports: string[] = [];
     const instrumentedJs = jsFiles.map(file => {
+      // Handle JSON files by making them available as global objects
+      if (file.language === 'json' || file.name.toLowerCase().endsWith('.json')) {
+        try {
+          // Validate JSON before injecting
+          JSON.parse(file.code);
+          return `/* File: ${file.name} (JSON) */\nwindow["${file.name}"] = ${file.code};`;
+        } catch (e) {
+          return `/* File: ${file.name} (Invalid JSON) */\nconsole.error('Invalid JSON in ${file.name}');`;
+        }
+      }
+
       // Escape </script> to prevent breaking the injection
-      const safeCode = file.code.replace(/<\/script>/g, '<\\/script>');
-      if (!isDebuggerEnabled) return safeCode;
+      let code = file.code.replace(/<\/script>/g, '<\\/script>');
       
-      const lines = safeCode.split('\n');
-      const instrumentedLines = lines.map((line, idx) => {
+      // Extract static imports (basic multi-line support)
+      const importRegex = /^import\s+[\s\S]*?from\s+['"].*?['"];?/gm;
+      code = code.replace(importRegex, (match) => {
+        allImports.push(match);
+        return `/* Moved import */`;
+      });
+
+      // Remove export keywords for combined script
+      code = code.replace(/^export\s+default\s+/gm, '/* export default */ ');
+      code = code.replace(/^export\s+/gm, '/* export */ ');
+
+      const lines = code.split('\n');
+      const fileBody: string[] = [];
+      
+      lines.forEach((line, idx) => {
         const lineNum = idx + 1;
         const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) return line;
+        
+        if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
+          fileBody.push(line);
+          return;
+        }
         
         // Skip lines that are likely continuations of previous lines
-        if (trimmed.startsWith('.') || trimmed.startsWith(',') || trimmed.startsWith('?') || trimmed.startsWith(':')) return line;
+        if (trimmed.startsWith('.') || trimmed.startsWith(',') || trimmed.startsWith('?') || trimmed.startsWith(':')) {
+          fileBody.push(line);
+          return;
+        }
         
-        return `await window.nexusDebugger.sync(${file.id}, ${lineNum}, {}); ${line}`;
+        if (isDebuggerEnabled) {
+          fileBody.push(`await window.nexusDebugger.sync(${file.id}, ${lineNum}, {}); ${line}`);
+        } else {
+          fileBody.push(line);
+        }
       });
-      return `/* File: ${file.name} */\n(async () => {\n  try {\n    ${instrumentedLines.join('\n')}\n  } catch (e) {\n    console.error('Debugger Error in ${file.name}:', e);\n  }\n})();`;
+
+      return `/* --- Start of File: ${file.name} --- */\n${fileBody.join('\n')}\n/* --- End of File: ${file.name} --- */`;
     }).join('\n\n');
 
+    const finalJs = `
+      ${Array.from(new Set(allImports)).join('\n')}
+
+      try {
+        ${instrumentedJs}
+      } catch (e) {
+        console.error('Runtime Error in combined scripts:', e);
+        window.parent.postMessage({ 
+          type: 'PREVIEW_ERROR', 
+          error: { msg: e.message, stack: e.stack }
+        }, '*');
+      }
+    `;
     // Final safety check for the combined content
-    const safeInstrumentedJs = instrumentedJs.replace(/<\/script>/g, '<\\/script>');
+    const safeInstrumentedJs = finalJs.replace(/<\/script>/g, '<\\/script>');
 
     const combined = `
       <!DOCTYPE html>
@@ -1291,6 +1549,19 @@ export default function App() {
             ${cssCode}
           </style>
           <script>
+            // Console redirection for the fallback view
+            const originalLog = console.log;
+            console.log = function(...args) {
+              originalLog.apply(console, args);
+              const consoleDiv = document.getElementById('nexus-console');
+              if (consoleDiv) {
+                const entry = document.createElement('div');
+                entry.style.marginBottom = '4px';
+                entry.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+                consoleDiv.appendChild(entry);
+              }
+            };
+
             window.onerror = function(msg, url, line, col, error) {
               const errorMessage = msg === 'Script error.' 
                 ? 'Script error: The browser restricted details for a cross-origin script error. This often happens with syntax errors in injected scripts.' 
@@ -1374,11 +1645,7 @@ export default function App() {
         <body>
           ${htmlCode}
           <script type="module">
-            try {
-              ${safeInstrumentedJs}
-            } catch (err) {
-              console.error('Runtime Error in injected scripts:', err);
-            }
+            ${safeInstrumentedJs}
           </script>
         </body>
       </html>
@@ -1389,12 +1656,64 @@ export default function App() {
     setPausedLine(null);
     setInspectedVariables({});
     
-    confetti({
-      particleCount: 40,
-      spread: 70,
-      origin: { y: 0.8 }
-    });
-  }, [files, breakpoints]);
+    if (showConfetti) {
+      confetti({
+        particleCount: 40,
+        spread: 70,
+        origin: { y: 0.8 }
+      });
+    }
+  }, [files, breakpoints, isDebuggerEnabled]);
+
+  const handleStartDebug = useCallback(() => {
+    if (debuggerStatus === 'running') {
+      setStepping(true);
+      setActiveTab('debugger');
+      showToast('Pausing execution...', 'info');
+    } else {
+      const debuggableLanguages = ['javascript', 'typescript'];
+      if (!debuggableLanguages.includes(activeFile.language)) {
+        showToast('Please select a JavaScript or TypeScript file to debug.', 'error');
+        return;
+      }
+
+      // Find first executable line
+      const lines = activeFile.code.split('\n');
+      let firstLine = 1;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line && !line.startsWith('//') && !line.startsWith('/*') && !line.startsWith('*')) {
+          firstLine = i + 1;
+          break;
+        }
+      }
+      
+      // Set breakpoint if none exists
+      const currentBreakpoints = breakpoints[activeFileId] || [];
+      if (!currentBreakpoints.includes(firstLine)) {
+        toggleBreakpoint(activeFileId, firstLine);
+      }
+      
+      // Ensure debugger is enabled
+      setIsDebuggerEnabled(true);
+      setActiveTab('debugger');
+      
+      // Small delay to ensure state updates if needed, though handleRun uses current state
+      setTimeout(() => {
+        handleRun(false);
+      }, 0);
+      
+      showToast('Starting debug session...', 'success');
+    }
+  }, [debuggerStatus, activeFile, activeFileId, breakpoints, toggleBreakpoint, handleRun]);
+
+  // Debounced auto-run when files change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleRun(false); // Run without confetti for auto-updates
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [files, handleRun]);
 
   const [stepping, setStepping] = useState(false);
 
@@ -1497,7 +1816,7 @@ export default function App() {
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [breakpoints, conditionalBreakpoints, stepping, steppingMode, targetDepth]);
+  }, [breakpoints, conditionalBreakpoints, stepping, steppingMode, targetDepth, watchExpressions]);
 
   const handleContinue = () => {
     const iframe = document.querySelector('iframe');
@@ -1569,6 +1888,29 @@ export default function App() {
       setPausedLine(null);
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (debuggerStatus !== 'paused') return;
+      
+      if (e.key === 'F8') {
+        e.preventDefault();
+        handleContinue();
+      } else if (e.key === 'F10') {
+        e.preventDefault();
+        handleStepOver();
+      } else if (e.key === 'F11') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleStepOut();
+        } else {
+          handleStepInto();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [debuggerStatus, handleContinue, handleStepOver, handleStepInto, handleStepOut]);
 
   const executeQuery = async () => {
     setSqlError(null);
@@ -1664,8 +2006,11 @@ export default function App() {
       let output = '';
       if (cmd === 'ls') output = files.map(f => f.name).join('  ');
       else if (cmd === 'npm install') output = 'Installing dependencies... Done.';
+      else if (cmd === 'help') output = 'Available commands: ls, npm install, clear, date, whoami, help';
+      else if (cmd === 'date') output = new Date().toLocaleString();
+      else if (cmd === 'whoami') output = user.name;
       else if (cmd === 'clear') { setTerminalHistory([]); setTerminalInput(''); return; }
-      else output = `Command not found: ${cmd}`;
+      else output = `Command not found: ${cmd}. Type 'help' for available commands.`;
       
       setTerminalHistory(prev => [...prev, { cmd, output }]);
       setTerminalInput('');
@@ -1679,6 +2024,7 @@ export default function App() {
     { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
     { id: 'search', name: 'Global Search', icon: Search, action: () => { setIsSearchOpen(true); setIsExplorerOpen(false); setIsSourceControlOpen(false); setIsThemePanelOpen(false); } },
     { id: 'live', name: 'Live AI Session', icon: Volume2, action: () => setActiveTab('live') },
+    { id: 'boilerplate', name: 'Generate Boilerplate', icon: Layers, action: () => { setActiveTab('ai'); setAiResponse(''); showToast('Select a pattern from the AI Assistant tab', 'info'); } },
   ];
 
   const filteredCommands = useMemo(() => [
@@ -1688,6 +2034,7 @@ export default function App() {
     { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
     { id: 'search', name: 'Global Search', icon: Search, action: () => { setIsSearchOpen(true); setIsExplorerOpen(false); setIsSourceControlOpen(false); setIsThemePanelOpen(false); } },
     { id: 'live', name: 'Live AI Session', icon: Volume2, action: () => setActiveTab('live') },
+    { id: 'boilerplate', name: 'Generate Boilerplate', icon: Layers, action: () => { setActiveTab('ai'); setAiResponse(''); showToast('Select a pattern from the AI Assistant tab', 'info'); } },
   ].filter(cmd => 
     cmd.name.toLowerCase().includes(paletteSearch.toLowerCase())
   ), [paletteSearch, handleGenerate, handleDebug, handleFastFix, handleShare]);
@@ -1907,8 +2254,38 @@ export default function App() {
           <SidebarButton 
             icon={GitBranch} 
             active={isSourceControlOpen} 
-            onClick={() => setIsSourceControlOpen(!isSourceControlOpen)} 
+            onClick={() => {
+              setIsSourceControlOpen(!isSourceControlOpen);
+              setIsApiPlaygroundOpen(false);
+              setIsWhiteboardOpen(false);
+              setIsExplorerOpen(false);
+              setIsSearchOpen(false);
+            }} 
             title="Source Control" 
+          />
+          <SidebarButton 
+            icon={Globe} 
+            active={isApiPlaygroundOpen} 
+            onClick={() => {
+              setIsApiPlaygroundOpen(!isApiPlaygroundOpen);
+              setIsWhiteboardOpen(false);
+              setIsSourceControlOpen(false);
+              setIsExplorerOpen(false);
+              setIsSearchOpen(false);
+            }} 
+            title="API Playground" 
+          />
+          <SidebarButton 
+            icon={PenTool} 
+            active={isWhiteboardOpen} 
+            onClick={() => {
+              setIsWhiteboardOpen(!isWhiteboardOpen);
+              setIsApiPlaygroundOpen(false);
+              setIsSourceControlOpen(false);
+              setIsExplorerOpen(false);
+              setIsSearchOpen(false);
+            }} 
+            title="Collaborative Whiteboard" 
           />
           <SidebarButton 
             icon={BookOpen} 
@@ -2000,7 +2377,7 @@ export default function App() {
                   onClick={() => {
                     if (user && userApiKey) saveApiKey(userApiKey);
                     setIsApiKeyModalOpen(false);
-                    if (userApiKey) alert('Custom API key is now active!');
+                    if (userApiKey) showToast('Custom API key is now active!', 'success');
                   }}
                   className="flex-1 py-3 bg-accent text-accent-foreground rounded-xl font-bold text-sm hover:opacity-90 transition-all"
                 >
@@ -2132,6 +2509,68 @@ export default function App() {
                   )}
                 </>
               )}
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {/* API Playground Panel */}
+      <AnimatePresence>
+        {isApiPlaygroundOpen && (
+          <motion.section 
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: window.innerWidth < 768 ? '100%' : 450, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            className={cn(
+              "flex flex-col overflow-hidden z-40 glass-panel",
+              "fixed md:relative inset-y-0 left-16 md:left-0 right-0 md:right-auto"
+            )}
+          >
+            <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-accent" />
+                <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">API Playground</span>
+              </div>
+              <button onClick={() => setIsApiPlaygroundOpen(false)} className="p-1 hover:bg-white/5 rounded">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+            <ApiPlayground 
+              method={apiMethod} setMethod={setApiMethod}
+              url={apiUrl} setUrl={setApiUrl}
+              headers={apiHeaders} setHeaders={setApiHeaders}
+              body={apiBody} setBody={setApiBody}
+              response={apiResponse}
+              isLoading={isApiLoading}
+              onSend={handleApiRequest}
+            />
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {/* Whiteboard Panel */}
+      <AnimatePresence>
+        {isWhiteboardOpen && (
+          <motion.section 
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: window.innerWidth < 768 ? '100%' : 'calc(100vw - 64px)', opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            className={cn(
+              "flex flex-col overflow-hidden z-[60] glass-panel",
+              "fixed inset-y-0 left-16 right-0"
+            )}
+          >
+            <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-white">
+              <div className="flex items-center gap-2">
+                <PenTool className="w-4 h-4 text-accent" />
+                <span className="text-[10px] font-mono uppercase tracking-widest text-black/50">Collaborative Whiteboard</span>
+              </div>
+              <button onClick={() => setIsWhiteboardOpen(false)} className="p-1 hover:bg-black/5 rounded text-black/60">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 relative">
+              <Whiteboard socket={socket} />
             </div>
           </motion.section>
         )}
@@ -2578,6 +3017,17 @@ export default function App() {
               <span className="relative z-10 hidden sm:inline">Thinking Mode</span>
             </button>
             <button 
+              onClick={handleStartDebug}
+              className={cn(
+                "flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
+                debuggerStatus === 'running' ? "bg-yellow-500 text-black hover:bg-yellow-400" : "bg-white/10 text-white hover:bg-white/20"
+              )}
+              title={debuggerStatus === 'running' ? "Pause Execution" : "Start Debug Session"}
+            >
+              {debuggerStatus === 'running' ? <Bug className="w-3.5 h-3.5 animate-pulse" /> : <Bug className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{debuggerStatus === 'running' ? 'Pause' : 'Debug'}</span>
+            </button>
+            <button 
               onClick={handleRun}
               className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
             >
@@ -2633,6 +3083,54 @@ export default function App() {
             </div>
           </div>
           <div className="flex-1 relative">
+            <AnimatePresence>
+              {debuggerStatus === 'paused' && (
+                <motion.div 
+                  initial={{ y: -20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -20, opacity: 0 }}
+                  className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-bg-secondary/90 backdrop-blur-md border border-white/10 rounded-full p-1 shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
+                >
+                  <button 
+                    onClick={handleContinue}
+                    className="p-2 hover:bg-white/10 rounded-full text-green-400 transition-colors"
+                    title="Continue (F8)"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                  </button>
+                  <div className="w-px h-4 bg-white/10 mx-1" />
+                  <button 
+                    onClick={handleStepOver}
+                    className="p-2 hover:bg-white/10 rounded-full text-blue-400 transition-colors"
+                    title="Step Over (F10)"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={handleStepInto}
+                    className="p-2 hover:bg-white/10 rounded-full text-purple-400 transition-colors"
+                    title="Step Into (F11)"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={handleStepOut}
+                    className="p-2 hover:bg-white/10 rounded-full text-yellow-400 transition-colors"
+                    title="Step Out (Shift+F11)"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                  <div className="w-px h-4 bg-white/10 mx-1" />
+                  <button 
+                    onClick={handleRun}
+                    className="p-2 hover:bg-white/10 rounded-full text-red-400 transition-colors"
+                    title="Restart"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <Suspense fallback={<div className="h-full w-full flex items-center justify-center bg-bg-primary text-text-secondary animate-pulse">Loading Editor...</div>}>
               <Editor
                 height="100%"
@@ -2776,7 +3274,7 @@ export default function App() {
                                       if (activeFile && suggestion.suggestedCode) {
                                         // Simple insertion for now, or we could replace
                                         updateFile(activeFileId, { code: activeFile.code + '\n\n' + suggestion.suggestedCode });
-                                        alert('Code added to file!');
+                                        showToast('Code added to file!', 'success');
                                       }
                                     }}
                                     className="absolute bottom-2 right-2 p-1.5 bg-accent text-accent-foreground rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
@@ -2791,19 +3289,45 @@ export default function App() {
                         </div>
                       </div>
                     ) : aiResponse ? (
-                      <Markdown
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2 text-accent">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span className="text-[10px] uppercase tracking-widest font-bold">AI Response</span>
+                          </div>
+                          <button 
+                            onClick={() => setAiResponse('')}
+                            className="text-[9px] opacity-40 hover:opacity-100 uppercase tracking-widest"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                        <Markdown
                         components={{
                           code({ node, inline, className, children, ...props }: any) {
                             const match = /language-(\w+)/.exec(className || '');
                             return !inline && match ? (
                               <div className="relative group">
-                                <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 flex gap-2">
+                                  <button 
+                                    onClick={() => {
+                                      if (activeFile) {
+                                        updateFile(activeFileId, { code: activeFile.code + '\n\n' + String(children) });
+                                        showToast('Code inserted into file!', 'success');
+                                      }
+                                    }}
+                                    className="p-1.5 bg-accent text-accent-foreground hover:opacity-90 rounded-md backdrop-blur-sm shadow-lg"
+                                    title="Insert into File"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                  </button>
                                   <button 
                                     onClick={() => {
                                       navigator.clipboard.writeText(String(children));
-                                      alert('Code copied!');
+                                      showToast('Code copied!', 'success');
                                     }}
                                     className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md backdrop-blur-sm"
+                                    title="Copy to Clipboard"
                                   >
                                     <Share2 className="w-3 h-3" />
                                   </button>
@@ -2828,9 +3352,42 @@ export default function App() {
                       >
                         {aiResponse}
                       </Markdown>
+                    </div>
                     ) : (
-                      <div className="text-zinc-600 italic">
-                        Ready for commands. Try "Build a login page" or "Fix this code".
+                      <div className="space-y-6">
+                        <div className="flex items-center gap-2 text-accent opacity-60 mb-4">
+                          <Sparkles className="w-4 h-4" />
+                          <span className="text-[10px] uppercase tracking-widest font-bold">Boilerplate & Patterns</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {[
+                            { id: 'api', name: 'API Fetch Hook', icon: Globe, desc: 'React hook with loading/error states' },
+                            { id: 'comp', name: 'React Component', icon: Layout, desc: 'Functional component with Tailwind' },
+                            { id: 'schema', name: 'Database Schema', icon: Database, desc: 'Prisma/SQL schema for common models' },
+                            { id: 'route', name: 'Express Route', icon: Server, desc: 'REST API endpoint with validation' },
+                            { id: 'form', name: 'Formik/Zod Form', icon: FileText, desc: 'Validated form with error messages' },
+                            { id: 'auth', name: 'Auth Context', icon: Lock, desc: 'React context for user authentication' }
+                          ].map((pattern) => (
+                            <button
+                              key={pattern.id}
+                              onClick={() => handleApplyBoilerplate(pattern.name)}
+                              className="flex flex-col items-start p-4 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 hover:border-accent/40 transition-all group text-left"
+                            >
+                              <div className="p-2 bg-accent/10 rounded-lg mb-3 group-hover:scale-110 transition-transform">
+                                <pattern.icon className="w-4 h-4 text-accent" />
+                              </div>
+                              <span className="text-xs font-bold text-white mb-1">{pattern.name}</span>
+                              <span className="text-[10px] text-text-secondary leading-tight">{pattern.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="mt-8 p-4 bg-accent/5 border border-accent/10 rounded-xl">
+                          <p className="text-[11px] text-text-secondary italic">
+                            Tip: You can also use natural language in the prompt bar below to request specific patterns like "Generate a bento grid layout" or "Create a Stripe payment integration".
+                          </p>
+                        </div>
                       </div>
                     )}
                   </motion.div>
@@ -2843,60 +3400,92 @@ export default function App() {
                     animate={{ opacity: 1 }}
                     className="flex-1 flex flex-col overflow-hidden"
                   >
+                    <div className="flex items-center justify-between mb-2 px-1">
+                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Conversation History</span>
+                      <button 
+                        onClick={clearChatHistory}
+                        className="text-[9px] text-red-400 hover:underline flex items-center gap-1"
+                      >
+                        <Trash2 className="w-2.5 h-2.5" />
+                        Clear Chat
+                      </button>
+                    </div>
                     <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 custom-scrollbar">
                       {chatHistory.map((msg, i) => (
                         <div key={i} className={cn("flex gap-3", msg.role === 'user' ? "justify-end" : "justify-start")}>
                           <div className={cn(
-                            "max-w-[80%] p-3 rounded-2xl text-xs leading-relaxed",
+                            "max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed group relative",
                             msg.role === 'user' ? "bg-accent text-accent-foreground rounded-tr-none" : "bg-white/5 text-text-secondary rounded-tl-none border border-border-custom"
                           )}>
-                            <div className="flex items-center gap-2 mb-1 opacity-50 font-bold uppercase tracking-tighter text-[9px]">
-                              {msg.role === 'user' ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
-                              {msg.role === 'user' ? 'You' : 'Nexus AI'}
+                            <div className="flex items-center justify-between gap-4 mb-1">
+                              <div className="flex items-center gap-2 opacity-50 font-bold uppercase tracking-tighter text-[9px]">
+                                {msg.role === 'user' ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
+                                {msg.role === 'user' ? 'You' : 'Nexus AI'}
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  navigator.clipboard.writeText(msg.parts[0].text);
+                                  showToast('Message copied!', 'success');
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-white/10 rounded"
+                                title="Copy message"
+                              >
+                                <Copy className="w-2.5 h-2.5" />
+                              </button>
                             </div>
-                            <Markdown
-                              components={{
-                                code({ node, inline, className, children, ...props }: any) {
-                                  const match = /language-(\w+)/.exec(className || '');
-                                  return !inline && match ? (
-                                    <div className="relative group my-4">
-                                      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                        <button 
-                                          onClick={() => {
-                                            navigator.clipboard.writeText(String(children));
-                                            alert('Code copied!');
-                                          }}
-                                          className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md backdrop-blur-sm"
+                            <div className="markdown-body">
+                              <Markdown
+                                components={{
+                                  code({ node, inline, className, children, ...props }: any) {
+                                    const match = /language-(\w+)/.exec(className || '');
+                                    return !inline && match ? (
+                                      <div className="relative group my-4">
+                                        <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                          <button 
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(String(children));
+                                              showToast('Code copied!', 'success');
+                                            }}
+                                            className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md backdrop-blur-sm"
+                                          >
+                                            <Copy className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                        <SyntaxHighlighter
+                                          style={vscDarkPlus}
+                                          language={match[1]}
+                                          PreTag="div"
+                                          className="rounded-xl !bg-black/40 !p-4 border border-white/5"
+                                          {...props}
                                         >
-                                          <Share2 className="w-3 h-3" />
-                                        </button>
+                                          {String(children).replace(/\n$/, '')}
+                                        </SyntaxHighlighter>
                                       </div>
-                                      <SyntaxHighlighter
-                                        style={vscDarkPlus}
-                                        language={match[1]}
-                                        PreTag="div"
-                                        className="rounded-xl !bg-black/40 !p-4 border border-white/5"
-                                        {...props}
-                                      >
-                                        {String(children).replace(/\n$/, '')}
-                                      </SyntaxHighlighter>
-                                    </div>
-                                  ) : (
-                                    <code className={cn("bg-white/10 px-1.5 py-0.5 rounded text-accent", className)} {...props}>
-                                      {children}
-                                    </code>
-                                  );
-                                },
-                              }}
-                            >
-                              {msg.parts[0].text}
-                            </Markdown>
+                                    ) : (
+                                      <code className={cn("bg-white/10 px-1.5 py-0.5 rounded text-accent", className)} {...props}>
+                                        {children}
+                                      </code>
+                                    );
+                                  },
+                                }}
+                              >
+                                {msg.parts[0].text}
+                              </Markdown>
+                            </div>
                           </div>
                         </div>
                       ))}
+                      {isChatStreaming && (
+                        <div className="flex justify-start">
+                          <div className="bg-white/5 text-text-secondary p-3 rounded-2xl rounded-tl-none border border-border-custom flex items-center gap-2">
+                            <Loader2 className="w-3 h-3 animate-spin text-accent" />
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Nexus AI is typing...</span>
+                          </div>
+                        </div>
+                      )}
                       <div ref={chatEndRef} />
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 relative">
                       <input 
                         id="chat-input"
                         name="chat-input"
@@ -2904,13 +3493,15 @@ export default function App() {
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}
                         placeholder="Ask anything about coding..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs focus:ring-0 focus:border-accent transition-all"
+                        disabled={isChatStreaming}
+                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:ring-0 focus:border-accent transition-all disabled:opacity-50"
                       />
                       <button 
                         onClick={handleChatSend}
-                        className="p-2 bg-accent text-accent-foreground rounded-xl hover:opacity-90 transition-colors"
+                        disabled={isChatStreaming || !chatInput.trim()}
+                        className="p-2.5 bg-accent text-accent-foreground rounded-xl hover:opacity-90 transition-colors disabled:opacity-50"
                       >
-                        <Send className="w-4 h-4" />
+                        {isChatStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       </button>
                     </div>
                   </motion.div>
@@ -3086,35 +3677,52 @@ export default function App() {
                       </div>
                       <div className="flex flex-col bg-black/20 rounded-xl border border-white/5 overflow-hidden">
                         <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Variables</span>
-                          <span className="text-[9px] font-mono opacity-30">Global Scope</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Variables</span>
+                            <div className="relative">
+                              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-zinc-500" />
+                              <input 
+                                placeholder="Search..."
+                                value={variableSearch}
+                                onChange={(e) => setVariableSearch(e.target.value)}
+                                className="bg-black/40 border border-white/10 rounded-full pl-6 pr-2 py-0.5 text-[9px] w-24 focus:w-32 transition-all focus:ring-1 focus:ring-accent outline-none"
+                              />
+                            </div>
+                          </div>
+                          <span className="text-[9px] font-mono opacity-30">Local Scope</span>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                        <div className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
                           {Object.entries(inspectedVariables).length > 0 ? (
                             Object.entries(inspectedVariables)
                               .filter(([key]) => !['nexusDebugger', 'parent', 'opener', 'top', 'self', 'window', 'document', 'location', 'history', 'navigator', 'screen', 'chrome', 'speechSynthesis'].includes(key))
+                              .filter(([key]) => key.toLowerCase().includes(variableSearch.toLowerCase()))
                               .map(([key, value]) => (
-                                <div key={key} className="flex flex-col gap-1 text-[11px] font-mono group border-b border-white/5 pb-2 last:border-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-blue-400 shrink-0 font-bold">{key}:</span>
-                                    <span className="text-zinc-500 text-[9px] italic">({typeof value})</span>
-                                  </div>
-                                  <div className="text-text-secondary break-all pl-2 border-l border-white/10">
-                                    {typeof value === 'object' && value !== null 
-                                      ? <pre className="text-[10px] whitespace-pre-wrap">{JSON.stringify(value, (k, v) => typeof v === 'function' ? '[Function]' : v, 2)}</pre> 
-                                      : `${value}`}
-                                  </div>
-                                </div>
+                                <VariableItem key={key} name={key} value={value} />
                               ))
                           ) : (
                             <div className="text-zinc-600 italic text-xs">No variables to inspect. Set a breakpoint and run.</div>
+                          )}
+                          {Object.entries(inspectedVariables).length > 0 && 
+                           Object.entries(inspectedVariables).filter(([key]) => key.toLowerCase().includes(variableSearch.toLowerCase())).length === 0 && (
+                            <div className="text-zinc-600 italic text-xs text-center py-4">No variables matching "{variableSearch}"</div>
                           )}
                         </div>
                       </div>
                       <div className="flex flex-col bg-black/20 rounded-xl border border-white/5 overflow-hidden">
                         <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
                           <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Breakpoints</span>
-                          <span className="text-[9px] font-mono opacity-30">Conditional</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-mono opacity-30">Conditional</span>
+                            <button 
+                              onClick={() => {
+                                setBreakpoints({});
+                                setConditionalBreakpoints({});
+                              }}
+                              className="text-[9px] text-red-400 hover:underline"
+                            >
+                              Clear All
+                            </button>
+                          </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
                           {Object.entries(breakpoints).map(([fId, lines]) => (
@@ -3236,7 +3844,15 @@ export default function App() {
                         </div>
                         <div className="flex-1 bg-black/20 rounded-xl border border-white/5 overflow-hidden flex flex-col">
                           <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between shrink-0">
-                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Results</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Results</span>
+                              <button 
+                                onClick={() => setSqlResults([])}
+                                className="text-[9px] text-accent hover:underline"
+                              >
+                                Clear
+                              </button>
+                            </div>
                             {sqlResults.length > 0 && <span className="text-[9px] opacity-30">{sqlResults.length} rows</span>}
                           </div>
                           <div className="flex-1 overflow-auto custom-scrollbar p-4">
@@ -3588,18 +4204,16 @@ export default function App() {
                               <button 
                                 onClick={() => {
                                   navigator.clipboard.writeText(`<img src="${asset.url}" alt="${asset.name}" referrerPolicy="no-referrer" />`);
-                                  alert('HTML tag copied!');
                                 }}
-                                className="flex-1 py-1 bg-accent text-accent-foreground rounded text-[8px] font-bold uppercase"
+                                className="flex-1 py-1 bg-accent text-accent-foreground rounded text-[8px] font-bold uppercase hover:opacity-90 transition-all active:scale-95"
                               >
                                 Tag
                               </button>
                               <button 
                                 onClick={() => {
                                   navigator.clipboard.writeText(asset.url);
-                                  alert('URL copied!');
                                 }}
-                                className="flex-1 py-1 bg-white/10 text-white rounded text-[8px] font-bold uppercase"
+                                className="flex-1 py-1 bg-white/10 text-white rounded text-[8px] font-bold uppercase hover:bg-white/20 transition-all active:scale-95"
                               >
                                 URL
                               </button>
@@ -3649,7 +4263,7 @@ export default function App() {
                           </div>
                           <button 
                             onClick={() => {
-                              alert(`Simulated installation of ${result.package.name}`);
+                              showToast(`Simulated installation of ${result.package.name}`, 'info');
                               // In a real app, we'd update package.json or trigger a backend install
                             }}
                             className="px-4 py-1.5 bg-white/5 hover:bg-accent hover:text-accent-foreground rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all"
@@ -3783,6 +4397,29 @@ export default function App() {
       </>
       )}
     </main>
+
+      {/* Voice Status Indicator */}
+      <AnimatePresence>
+        {toasts.map((toast, i) => (
+          <motion.div
+            key={toast.id}
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 100 }}
+            className={cn(
+              "fixed top-4 right-4 z-[200] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border backdrop-blur-xl",
+              toast.type === 'success' ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400" :
+              toast.type === 'error' ? "bg-red-500/20 border-red-500/30 text-red-400" :
+              "bg-accent/20 border-accent/30 text-accent"
+            )}
+            style={{ top: `${16 + i * 60}px` }}
+          >
+            {toast.type === 'success' ? <Check className="w-4 h-4" /> : 
+             toast.type === 'error' ? <X className="w-4 h-4" /> : <Info className="w-4 h-4" />}
+            <span className="text-sm font-bold">{toast.message}</span>
+          </motion.div>
+        ))}
+      </AnimatePresence>
 
       {/* Voice Status Indicator */}
       <AnimatePresence>

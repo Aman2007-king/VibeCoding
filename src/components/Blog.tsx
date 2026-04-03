@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, useMotionValue, useSpring, useTransform } from 'motion/react';
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { Sparkles, Zap, Shield, Globe, Cpu, Code2, Rocket, Heart, Brain, Layers } from 'lucide-react';
 
 const blogPosts = [
