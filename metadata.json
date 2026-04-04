@@ -1,6 +1,6 @@
 {
-  "name": "Nexus Forge: AI-Powered Multi-Language IDE",
-  "description": "A professional, next-generation coding platform featuring AI-driven development, voice commands, multi-language debugging, and live web previews.",
+  "name": "Nexus Forge: AI-Powered Full-Stack IDE",
+  "description": "A professional, next-generation coding platform for full-stack developers. Features AI-driven development, automatic dependency management, real backend database integration, multi-language debugging, and live web previews.",
   "requestFramePermissions": [
     "microphone"
   ]

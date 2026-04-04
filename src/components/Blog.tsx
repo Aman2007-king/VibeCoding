@@ -131,7 +131,7 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, type: "spring", stiffness: 100 }}
-              className="text-4xl md:text-7xl lg:text-[10rem] font-black tracking-tighter leading-[0.8] uppercase italic"
+              className="text-4xl sm:text-6xl md:text-7xl lg:text-[10rem] font-black tracking-tighter leading-[0.8] uppercase italic"
             >
               The Machine <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent via-blue-400 to-purple-500">That Codes.</span>
@@ -187,14 +187,14 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
       </section>
 
       {/* How it Works - The Process */}
-      <section className="max-w-7xl mx-auto px-6 py-40">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-24 items-center">
-          <div className="space-y-16">
-            <div className="space-y-6">
+      <section className="max-w-7xl mx-auto px-6 py-20 md:py-40">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-24 items-center">
+          <div className="space-y-10 md:space-y-16">
+            <div className="space-y-4 md:space-y-6">
               <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">The Workflow</h2>
-              <h3 className="text-5xl md:text-7xl font-black tracking-tighter uppercase leading-none">How to Process <br />Your Application.</h3>
+              <h3 className="text-4xl md:text-7xl font-black tracking-tighter uppercase leading-none">How to Process <br />Your Application.</h3>
             </div>
-            <div className="space-y-10">
+            <div className="space-y-8 md:space-y-10">
               {processSteps.map((step, i) => (
                 <motion.div 
                   key={i}
@@ -242,16 +242,16 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
       </section>
 
       {/* Web Uses Section */}
-      <section className="bg-bg-secondary py-40 relative overflow-hidden">
+      <section className="bg-bg-secondary py-20 md:py-40 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
         <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
         
-        <div className="max-w-7xl mx-auto px-6 space-y-24">
-          <div className="text-center space-y-6">
+        <div className="max-w-7xl mx-auto px-6 space-y-16 md:space-y-24">
+          <div className="text-center space-y-4 md:space-y-6">
             <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">Capabilities</h2>
-            <h3 className="text-5xl md:text-8xl font-black tracking-tighter uppercase">What My Web Uses.</h3>
+            <h3 className="text-4xl md:text-8xl font-black tracking-tighter uppercase">What My Web Uses.</h3>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-10">
             {webUses.map((use, i) => (
               <Card3D 
                 key={i}
@@ -271,11 +271,11 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
       </section>
 
       {/* Blog Posts Grid */}
-      <section className="max-w-7xl mx-auto px-6 py-40 space-y-20">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-          <div className="space-y-4">
+      <section className="max-w-7xl mx-auto px-6 py-20 md:py-40 space-y-12 md:space-y-20">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-8">
+          <div className="space-y-3 md:space-y-4">
             <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">Intelligence Feed</h2>
-            <h3 className="text-5xl font-black tracking-tighter uppercase">Latest Insights.</h3>
+            <h3 className="text-4xl md:text-5xl font-black tracking-tighter uppercase">Latest Insights.</h3>
           </div>
         </div>
 
@@ -313,17 +313,17 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
       </section>
 
       {/* 3D Visual Section */}
-      <section className="bg-bg-secondary py-40 overflow-hidden relative">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-24 items-center">
-          <div className="space-y-12">
-            <h2 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] uppercase">
+      <section className="bg-bg-secondary py-20 md:py-40 overflow-hidden relative">
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 md:gap-24 items-center">
+          <div className="space-y-8 md:space-y-12">
+            <h2 className="text-4xl md:text-7xl font-black tracking-tighter leading-[0.9] uppercase">
               Immersive <br />
               <span className="text-accent italic">3D Intelligence.</span>
             </h2>
-            <p className="text-text-secondary text-xl leading-relaxed opacity-80">
+            <p className="text-text-secondary text-lg md:text-xl leading-relaxed opacity-80">
               Our AI doesn't just see text; it understands the multi-dimensional structure of your application. Experience a development environment that feels alive.
             </p>
-            <div className="grid grid-cols-2 gap-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 md:gap-10">
               {features.map((f, i) => (
                 <div key={i} className="space-y-3">
                   <div className="flex items-center gap-3 text-accent">

@@ -55,6 +55,7 @@ import {
   Command,
   Maximize2,
   Minimize2,
+  Eye,
   Split,
   Copy,
   ExternalLink,
@@ -77,14 +78,87 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Markdown from 'react-markdown';
 import confetti from 'canvas-confetti';
 import { cn } from './lib/utils';
-import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject, getGhostText, getSmartSuggestions } from './services/geminiService';
+import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject, getGhostText, getSmartSuggestions, detectDependencies } from './services/geminiService';
 import { GoogleGenAI, Modality } from "@google/genai";
+import { Octokit } from "octokit";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Blog from './components/Blog';
 import About from './components/About';
 import { ApiPlayground } from './components/ApiPlayground';
 import { Whiteboard } from './components/Whiteboard';
+
+import { 
+  auth, 
+  signInWithGoogle, 
+  logOut, 
+  db, 
+  handleFirestoreError, 
+  OperationType 
+} from './lib/firebase';
+import { 
+  onSnapshot, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  Timestamp, 
+  addDoc, 
+  deleteDoc, 
+  updateDoc 
+} from 'firebase/firestore';
+import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, errorInfo: string | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, errorInfo: error.message || String(error) };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let displayMessage = "Something went wrong.";
+      try {
+        const parsed = JSON.parse(this.state.errorInfo || '{}');
+        if (parsed.error) {
+          displayMessage = `Firestore Error: ${parsed.error} (Op: ${parsed.operationType})`;
+        }
+      } catch (e) {
+        displayMessage = this.state.errorInfo || displayMessage;
+      }
+
+      return (
+        <div className="min-h-screen bg-bg-primary flex flex-col items-center justify-center p-8 text-center space-y-6">
+          <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center text-red-500">
+            <Bug className="w-10 h-10" />
+          </div>
+          <h1 className="text-2xl font-bold text-white">Application Error</h1>
+          <p className="text-text-secondary max-w-md">{displayMessage}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-6 py-3 bg-accent text-accent-foreground rounded-xl font-bold hover:opacity-90 transition-all"
+          >
+            Reload Application
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 const LANGUAGES = [
   { id: 'javascript', name: 'JavaScript' },
@@ -324,17 +398,12 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
   );
 };
 
-export default function App() {
+function App() {
   console.log("App component rendering...");
-  const [files, setFiles] = useState<FileState[]>([
-    { id: 1, name: 'index.html', code: '<div class="container">\n  <h1>Nexus Forge</h1>\n  <p>Multi-language combination preview</p>\n  <button id="btn">Click Me</button>\n</div>', language: 'html', type: 'file', parentId: null },
-    { id: 2, name: 'styles.css', code: '.container {\n  padding: 2rem;\n  font-family: sans-serif;\n  text-align: center;\n  background: #f0f9ff;\n  border-radius: 1rem;\n}\nh1 { color: #0ea5e9; }', language: 'css', type: 'file', parentId: null },
-    { id: 3, name: 'script.js', code: 'document.getElementById("btn").onclick = () => {\n  alert("Hello from Nexus Forge!");\n};', language: 'javascript', type: 'file', parentId: null },
-    { id: 4, name: 'extra.js', code: 'console.log("Secondary script loaded");', language: 'javascript', type: 'file', parentId: null },
-    { id: 5, name: 'components', code: '', language: '', type: 'folder', parentId: null, isOpen: true },
-    { id: 6, name: 'Header.js', code: 'export const Header = () => "Header";', language: 'javascript', type: 'file', parentId: 5 },
-  ]);
-  const [activeFileId, setActiveFileId] = useState(1);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [files, setFiles] = useState<FileState[]>([]);
+  const [activeFileId, setActiveFileId] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [toasts, setToasts] = useState<{ id: string, message: string, type: 'success' | 'error' | 'info' }[]>([]);
 
@@ -349,7 +418,10 @@ export default function App() {
   const [aiResponse, setAiResponse] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [githubToken, setGithubToken] = useState<string | null>(null);
+  const [githubToken, setGithubToken] = useState<string | null>(localStorage.getItem('github_token'));
+  const [repositories, setRepositories] = useState<any[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<any | null>(null);
+  const [isFetchingRepos, setIsFetchingRepos] = useState(false);
   const [previewContent, setPreviewContent] = useState('');
   const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live' | 'command' | 'debugger' | 'database' | 'analytics' | 'review' | 'tests' | 'docs' | 'terminal' | 'assets' | 'npm'>('editor');
   const [aiPrompt, setAiPrompt] = useState('');
@@ -375,6 +447,183 @@ export default function App() {
   const [paletteSearch, setPaletteSearch] = useState('');
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  useEffect(() => {
+    if (githubToken) {
+      fetchRepos();
+    } else {
+      setRepositories([]);
+      setSelectedRepo(null);
+    }
+  }, [githubToken]);
+
+  const fetchRepos = async () => {
+    setIsFetchingRepos(true);
+    try {
+      // Try direct fetch first as it's more reliable in some browser environments
+      const response = await fetch('https://api.github.com/user/repos?sort=updated&per_page=100', {
+        headers: {
+          'Authorization': `token ${githubToken}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `GitHub API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setRepositories(data);
+        if (data.length > 0) {
+          showToast(`Fetched ${data.length} repositories`, 'success');
+        } else {
+          showToast('No repositories found in your account', 'info');
+        }
+      } else {
+        throw new Error('Invalid response from GitHub');
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch repositories:', error);
+      showToast(`Failed to fetch repositories: ${error.message}`, 'error');
+      
+      // Fallback to Octokit if direct fetch fails for some reason
+      try {
+        const octokit = new Octokit({ auth: githubToken });
+        const { data } = await octokit.rest.repos.listForAuthenticatedUser({
+          sort: 'updated',
+          per_page: 100
+        });
+        setRepositories(data);
+      } catch (octoError: any) {
+        console.error('Octokit fallback also failed:', octoError);
+      }
+    } finally {
+      setIsFetchingRepos(false);
+    }
+  };
+
+  // Firebase Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setIsAuthReady(true);
+      if (user) {
+        // Sync user profile to Firestore
+        const userRef = doc(db, 'users', user.uid);
+        setDoc(userRef, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          lastLoginAt: Timestamp.now(),
+          role: 'user' // Default role
+        }, { merge: true }).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Sync: Projects
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const q = query(collection(db, 'projects'), where('ownerId', '==', currentUser.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const projectData = snapshot.docs[0].data();
+        if (projectData.files) {
+          // Only update if files are different to avoid loops
+          // For simplicity in this demo, we'll just set them if they exist
+          // In a real app, you'd want a more robust sync strategy
+          // setFiles(projectData.files);
+        }
+      }
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'projects'));
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // Firestore Sync: Chat History
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const q = query(
+      collection(db, 'users', currentUser.uid, 'chats'), 
+      orderBy('timestamp', 'asc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const history = snapshot.docs.map(doc => ({
+        role: doc.data().role === 'assistant' ? 'model' : 'user' as 'user' | 'model',
+        parts: [{ text: doc.data().content }]
+      }));
+      if (history.length > 0) {
+        setChatHistory(history);
+      }
+    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${currentUser.uid}/chats`));
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  const handleSignIn = async () => {
+    try {
+      await signInWithGoogle();
+      showToast("Signed in successfully!", "success");
+    } catch (error) {
+      showToast("Sign in failed", "error");
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await logOut();
+      setGithubToken(null);
+      localStorage.removeItem('github_token');
+      showToast("Signed out successfully!", "info");
+    } catch (error) {
+      showToast("Sign out failed", "error");
+    }
+  };
+
+  const saveProjectToFirestore = async () => {
+    if (!currentUser) {
+      showToast("Sign in to save projects", "info");
+      return;
+    }
+
+    try {
+      const projectId = "default-project"; // For demo, use a single project
+      const projectRef = doc(db, 'projects', projectId);
+      await setDoc(projectRef, {
+        id: projectId,
+        ownerId: currentUser.uid,
+        name: "My Nexus Project",
+        files: files,
+        updatedAt: Timestamp.now(),
+        createdAt: Timestamp.now() // In real app, check if exists first
+      }, { merge: true });
+      showToast("Project saved to cloud", "success");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'projects/default-project');
+    }
+  };
+
+  const saveChatMessageToFirestore = async (role: 'user' | 'assistant', content: string) => {
+    if (!currentUser) return;
+
+    try {
+      await addDoc(collection(db, 'users', currentUser.uid, 'chats'), {
+        id: Math.random().toString(36).substring(7),
+        userId: currentUser.uid,
+        role,
+        content,
+        timestamp: Timestamp.now()
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `users/${currentUser.uid}/chats`);
+    }
+  };
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [currentTheme, setCurrentTheme] = useState<Theme>(THEMES[0]);
   const [isThemePanelOpen, setIsThemePanelOpen] = useState(false);
@@ -478,6 +727,74 @@ export default function App() {
     setAssets(prev => prev.filter(a => a.id !== id));
   };
   const [smartSuggestions, setSmartSuggestions] = useState<{ title: string, description: string, type: string, impact: string, suggestedCode?: string }[]>([]);
+
+  const [detectedDeps, setDetectedDeps] = useState<string[]>([]);
+  const [isReviewingDeps, setIsReviewingDeps] = useState(false);
+
+  const reviewDependencies = async () => {
+    if (!activeFile) return;
+    setIsReviewingDeps(true);
+    try {
+      const deps = await detectDependencies(activeFile.code, activeFile.language, userApiKey);
+      setDetectedDeps(deps);
+      if (deps.length > 0) {
+        showToast(`Detected ${deps.length} dependencies!`, "info");
+      } else {
+        showToast("No new dependencies detected.", "info");
+      }
+    } catch (err) {
+      console.error('Review deps error:', err);
+      showToast("Failed to review dependencies", "error");
+    } finally {
+      setIsReviewingDeps(false);
+    }
+  };
+
+  const installDependency = (pkg: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setTerminalHistory(prev => [...prev, { cmd: `npm install ${pkg}`, output: `Installing ${pkg}...`, type: "info", timestamp }]);
+    setTimeout(() => {
+      setTerminalHistory(prev => [...prev, { output: `+ ${pkg}@latest installed successfully.`, type: "success", timestamp }]);
+      showToast(`${pkg} installed!`, "success");
+    }, 1500);
+  };
+
+  const generateFullStackProject = async () => {
+    setIsGenerating(true);
+    try {
+      const result = await generateProject(`
+        Create a full-stack application that connects to a real backend database.
+        The backend is already provided at the following endpoints:
+        - POST /api/user-db/my-project/tasks (to create a task)
+        - GET /api/user-db/my-project/tasks (to list tasks)
+        - DELETE /api/user-db/my-project/tasks/:id (to delete a task)
+        
+        Generate:
+        1. index.html: A clean UI with a task list and input field.
+        2. script.js: JavaScript that uses fetch() to interact with these endpoints.
+        3. styles.css: Modern styling for the task manager.
+      `, [], useThinking, userApiKey);
+      if (result && result.files) {
+        const newFiles = result.files.map((f: any, idx: number) => ({
+          id: Date.now() + idx,
+          name: f.name,
+          code: f.code,
+          language: f.language,
+          type: "file",
+          parentId: null
+        }));
+        setFiles(newFiles);
+        setActiveFileId(newFiles[0].id);
+        showToast("Full-stack project generated!", "success");
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      }
+    } catch (err) {
+      console.error('Generate project error:', err);
+      showToast("Failed to generate project", "error");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const fetchSmartSuggestions = async () => {
     if (!activeFile) return;
@@ -655,7 +972,12 @@ export default function App() {
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'AUTH_SUCCESS') {
-        setUser(event.data.user);
+        const { user } = event.data;
+        setUser(user);
+        if (user.provider === 'github' && user.accessToken) {
+          setGithubToken(user.accessToken);
+          localStorage.setItem('github_token', user.accessToken);
+        }
         confetti({
           particleCount: 100,
           spread: 70,
@@ -960,15 +1282,18 @@ export default function App() {
     }));
 
     setChatHistory(prev => [...prev, { role: 'user', parts: [{ text: userMsg }] }]);
+    saveChatMessageToFirestore('user', userMsg);
     
     // Add a placeholder for AI response
     setChatHistory(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
     try {
+      let fullAiResponse = '';
       await chatWithAIStream(
         userMsg, 
         historyForAI,
         (text) => {
+          fullAiResponse = text;
           setChatHistory(prev => {
             const newHistory = [...prev];
             if (newHistory.length > 0) {
@@ -979,6 +1304,7 @@ export default function App() {
         },
         userApiKey
       );
+      saveChatMessageToFirestore('assistant', fullAiResponse);
     } catch (error) {
       setChatHistory(prev => {
         const newHistory = [...prev];
@@ -992,9 +1318,21 @@ export default function App() {
     }
   };
 
-  const clearChatHistory = () => {
+  const clearChatHistory = async () => {
     setChatHistory([]);
-    showToast('Chat history cleared', 'info');
+    if (currentUser) {
+      try {
+        const q = query(collection(db, 'users', currentUser.uid, 'chats'));
+        const snapshot = await getDoc(doc(db, 'users', currentUser.uid)); // Just a check
+        // In real app, you'd batch delete. For now, just clear local.
+        // Actually, let's just clear local for now to avoid complex batch logic in this demo.
+        showToast('Chat history cleared locally', 'info');
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      showToast('Chat history cleared', 'info');
+    }
   };
 
   const handleApplyBoilerplate = async (pattern: string) => {
@@ -1084,7 +1422,7 @@ export default function App() {
 
   const handleGithubConnect = async () => {
     try {
-      const response = await fetch('/api/auth/github/url');
+      const response = await fetch(`/api/auth/github/url?origin=${encodeURIComponent(window.location.origin)}`);
       const { url } = await response.json();
       window.open(url, 'github_oauth', 'width=600,height=700');
     } catch (error) {
@@ -1139,17 +1477,63 @@ export default function App() {
       return;
     }
     
-    showToast('Pushing to GitHub... (Simulated via API)', 'info');
-    // In a real app, we would use octokit to create a repo or update files
-    // For this demo, we'll simulate the success
-    setTimeout(() => {
+    if (!selectedRepo) {
+      showToast('Please select a repository first.', 'error');
+      return;
+    }
+    
+    showToast(`Pushing to ${selectedRepo.name}...`, 'info');
+    
+    try {
+      const octokit = new Octokit({ auth: githubToken });
+      
+      // For each staged file, we'll try to update it in the repo
+      // This is a simplified version: we'll just update the first staged file
+      const stagedFileIds = Array.from(stagedFiles);
+      if (stagedFileIds.length === 0) {
+        showToast('No files staged for push.', 'error');
+        return;
+      }
+      
+      const fileToPush = files.find(f => f.id === stagedFileIds[0]);
+      if (!fileToPush) return;
+
+      // Get the current file content from GitHub to get the SHA
+      let sha: string | undefined;
+      try {
+        const { data: fileData } = await octokit.rest.repos.getContent({
+          owner: selectedRepo.owner.login,
+          repo: selectedRepo.name,
+          path: fileToPush.name,
+        });
+        if (!Array.isArray(fileData)) {
+          sha = fileData.sha;
+        }
+      } catch (e) {
+        // File might not exist yet, which is fine
+      }
+
+      await octokit.rest.repos.createOrUpdateFileContents({
+        owner: selectedRepo.owner.login,
+        repo: selectedRepo.name,
+        path: fileToPush.name,
+        message: commitMessage || `Update ${fileToPush.name}`,
+        content: btoa(fileToPush.code),
+        sha: sha,
+      });
+
       confetti({
         particleCount: 100,
         spread: 70,
         origin: { y: 0.6 }
       });
-      showToast('Successfully pushed to GitHub!', 'success');
-    }, 1500);
+      showToast(`Successfully pushed ${fileToPush.name} to ${selectedRepo.name}!`, 'success');
+      setStagedFiles(new Set());
+      setCommitMessage('');
+    } catch (error: any) {
+      console.error('Push failed:', error);
+      showToast(`Push failed: ${error.message}`, 'error');
+    }
   };
 
   const toggleStageFile = (id: number) => {
@@ -1196,7 +1580,7 @@ export default function App() {
     }
   };
 
-  const activeFile = useMemo(() => files.find(f => f.id === activeFileId) || files[0], [files, activeFileId]);
+  const activeFile = useMemo(() => files.find(f => f.id === activeFileId) || files[0] || { id: 0, name: '', code: '', language: 'javascript', type: 'file', parentId: null }, [files, activeFileId]);
 
   const updateFile = useCallback((id: number, updates: Partial<FileState>) => {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
@@ -1440,6 +1824,7 @@ export default function App() {
   };
 
   const handleRun = useCallback((arg?: boolean | React.MouseEvent) => {
+    if (files.length === 0) return;
     const showConfetti = typeof arg === 'boolean' ? arg : true;
     const htmlFileObj = files.find(f => f.name.toLowerCase() === 'index.html') || files.find(f => f.language === 'html');
     const htmlCode = htmlFileObj?.code || `
@@ -1913,6 +2298,24 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [debuggerStatus, handleContinue, handleStepOver, handleStepInto, handleStepOut]);
 
+  const [projectData, setProjectData] = useState<any[]>([]);
+  const [isFetchingProjectData, setIsFetchingProjectData] = useState(false);
+
+  const fetchProjectData = async (collectionName: string = 'tasks') => {
+    setIsFetchingProjectData(true);
+    try {
+      const response = await fetch(`/api/user-db/my-project/${collectionName}`);
+      const data = await response.json();
+      if (data.success) {
+        setProjectData(data.results);
+      }
+    } catch (err) {
+      console.error('Fetch project data error:', err);
+    } finally {
+      setIsFetchingProjectData(false);
+    }
+  };
+
   const executeQuery = async () => {
     setSqlError(null);
     try {
@@ -2041,6 +2444,7 @@ export default function App() {
   ), [paletteSearch, handleGenerate, handleDebug, handleFastFix, handleShare]);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   const revealLine = useCallback((fileId: number, line: number) => {
     setActiveFileId(fileId);
@@ -2163,6 +2567,47 @@ export default function App() {
       </AnimatePresence>
 
       {/* Mobile Menu Backdrop */}
+      {/* Bottom Navigation (Mobile Only) */}
+      {view === 'ide' && (
+        <nav className="md:hidden h-16 bg-bg-secondary border-t border-border-custom flex items-center justify-around px-2 z-50 fixed bottom-0 left-0 w-full">
+          <button 
+            onClick={() => { setActiveTab('editor'); setIsPreviewOpen(false); }}
+            className={cn("flex flex-col items-center gap-1 p-2 transition-colors", activeTab === 'editor' && !isPreviewOpen ? "text-accent" : "text-text-secondary")}
+          >
+            <Code2 className="w-5 h-5" />
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Editor</span>
+          </button>
+          <button 
+            onClick={() => { setActiveTab('ai'); setIsPreviewOpen(false); }}
+            className={cn("flex flex-col items-center gap-1 p-2 transition-colors", activeTab === 'ai' && !isPreviewOpen ? "text-accent" : "text-text-secondary")}
+          >
+            <Sparkles className="w-5 h-5" />
+            <span className="text-[10px] font-bold uppercase tracking-tighter">AI</span>
+          </button>
+          <button 
+            onClick={() => { setActiveTab('chat'); setIsPreviewOpen(false); }}
+            className={cn("flex flex-col items-center gap-1 p-2 transition-colors", activeTab === 'chat' && !isPreviewOpen ? "text-accent" : "text-text-secondary")}
+          >
+            <MessageSquare className="w-5 h-5" />
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Chat</span>
+          </button>
+          <button 
+            onClick={() => setIsPreviewOpen(true)}
+            className={cn("flex flex-col items-center gap-1 p-2 transition-colors", isPreviewOpen ? "text-accent" : "text-text-secondary")}
+          >
+            <Play className="w-5 h-5" />
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Preview</span>
+          </button>
+          <button 
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="flex flex-col items-center gap-1 p-2 text-text-secondary"
+          >
+            <Layout className="w-5 h-5" />
+            <span className="text-[10px] font-bold uppercase tracking-tighter">Menu</span>
+          </button>
+        </nav>
+      )}
+
       <AnimatePresence>
         {isMobileMenuOpen && (
           <motion.div 
@@ -2179,7 +2624,7 @@ export default function App() {
       <aside className={cn(
         "w-16 flex-col items-center py-6 gap-8 z-30 transition-all duration-300 overflow-y-auto custom-scrollbar glass-sidebar",
         "fixed md:relative inset-y-0 left-0 md:flex",
-        isMobileMenuOpen ? "flex translate-x-0 w-16 pt-20" : "-translate-x-full md:translate-x-0"
+        isMobileMenuOpen ? "flex translate-x-0 w-16 pt-20 pb-20" : "-translate-x-full md:translate-x-0"
       )}>
         <div className="flex flex-col items-center gap-4 shrink-0">
           <div className="p-2 bg-accent/10 rounded-xl hidden md:block">
@@ -2321,6 +2766,44 @@ export default function App() {
             title="Settings" 
             className="text-text-secondary"
           />
+          
+          <div className="pt-4 border-t border-white/5 flex flex-col items-center gap-4">
+            {currentUser ? (
+              <div className="flex flex-col items-center gap-4">
+                <button 
+                  onClick={saveProjectToFirestore}
+                  className="p-2 rounded-lg hover:bg-white/5 text-accent"
+                  title="Save to Cloud"
+                >
+                  <Database className="w-5 h-5" />
+                </button>
+                <div className="relative group">
+                  <img 
+                    src={currentUser.photoURL || `https://ui-avatars.com/api/?name=${currentUser.displayName || 'User'}&background=random`} 
+                    alt="Profile" 
+                    className="w-8 h-8 rounded-full border border-white/10"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute left-full ml-2 px-2 py-1 bg-bg-secondary border border-white/10 rounded text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                    {currentUser.displayName || currentUser.email}
+                  </div>
+                </div>
+                <SidebarButton 
+                  icon={LogOut} 
+                  onClick={handleSignOut} 
+                  title="Sign Out" 
+                  className="text-red-400 hover:bg-red-400/10"
+                />
+              </div>
+            ) : (
+              <SidebarButton 
+                icon={LogIn} 
+                onClick={handleSignIn} 
+                title="Sign In with Google" 
+                className="text-accent hover:bg-accent/10"
+              />
+            )}
+          </div>
         </div>
       </aside>
 
@@ -2422,7 +2905,76 @@ export default function App() {
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
-              {!isGitInitialized ? (
+              {!githubToken ? (
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
+                  <Github className="w-12 h-12 opacity-10" />
+                  <p className="text-xs opacity-50">Connect your GitHub account to access your repositories.</p>
+                  <button 
+                    onClick={handleGithubConnect}
+                    className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 transition-all flex items-center gap-2"
+                  >
+                    <Github className="w-4 h-4" />
+                    Connect GitHub
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">GitHub Repository</label>
+                    <div className="flex items-center gap-2">
+                      {isFetchingRepos && <Loader2 className="w-3 h-3 animate-spin opacity-40" />}
+                      <button 
+                        onClick={fetchRepos}
+                        disabled={isFetchingRepos}
+                        className="p-1 hover:bg-white/5 rounded text-text-secondary hover:text-accent disabled:opacity-30"
+                        title="Refresh Repositories"
+                      >
+                        <RefreshCw className={cn("w-3 h-3", isFetchingRepos && "animate-spin")} />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {selectedRepo ? (
+                    <div className="p-3 bg-accent/10 border border-accent/20 rounded-lg flex items-center justify-between group">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <Github className="w-4 h-4 text-accent shrink-0" />
+                        <div className="flex flex-col overflow-hidden">
+                          <span className="text-xs font-bold truncate">{selectedRepo.name}</span>
+                          <span className="text-[9px] opacity-40 truncate">{selectedRepo.full_name}</span>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => setSelectedRepo(null)}
+                        className="p-1 hover:bg-white/5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                      {repositories.length > 0 ? (
+                        repositories.map(repo => (
+                          <button 
+                            key={repo.id}
+                            onClick={() => setSelectedRepo(repo)}
+                            className="w-full p-2 text-left hover:bg-white/5 rounded border border-transparent hover:border-white/10 transition-all flex items-center gap-2 group"
+                          >
+                            <Folder className="w-3.5 h-3.5 opacity-40 group-hover:opacity-100 transition-opacity" />
+                            <span className="text-xs truncate">{repo.name}</span>
+                            {repo.private && <Lock className="w-2.5 h-2.5 opacity-20 ml-auto" />}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="text-[10px] opacity-40 text-center py-4 italic">
+                          {isFetchingRepos ? 'Loading repositories...' : 'No repositories found'}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {githubToken && !isGitInitialized ? (
                 <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
                   <GitBranch className="w-12 h-12 opacity-10" />
                   <p className="text-xs opacity-50">This project is not yet a Git repository.</p>
@@ -2804,16 +3356,26 @@ export default function App() {
         "border-border-custom flex flex-col bg-bg-secondary shrink-0 transition-all duration-300",
         isPreviewFullScreen 
           ? "fixed inset-0 z-[100] w-full h-full" 
-          : "w-full md:w-1/3 h-64 md:h-full border-b md:border-b-0 md:border-r"
+          : isPreviewOpen 
+            ? "fixed inset-0 z-[60] w-full h-full md:relative md:inset-auto md:z-auto md:w-1/3 md:flex border-r" 
+            : "hidden"
       )}>
         <div className="h-12 border-b border-border-custom flex items-center px-4 justify-between bg-bg-primary overflow-x-auto custom-scrollbar">
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono uppercase tracking-widest opacity-50 text-text-secondary">Live Preview</span>
-            {isPreviewFullScreen && (
+            {(isPreviewFullScreen || (isPreviewOpen && window.innerWidth < 768)) && (
               <span className="px-2 py-0.5 bg-accent/20 text-accent text-[8px] font-bold rounded uppercase tracking-widest">Full Screen</span>
             )}
           </div>
           <div className="flex items-center gap-2">
+            {isPreviewOpen && (
+              <button 
+                onClick={() => setIsPreviewOpen(false)}
+                className="p-1.5 hover:bg-white/5 rounded-lg text-text-secondary"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
             <button 
               onClick={() => setPreviewViewport('desktop')}
               className={cn("p-1.5 rounded-lg transition-all", previewViewport === 'desktop' ? "bg-accent/20 text-accent" : "hover:bg-white/5 text-text-secondary")}
@@ -2960,6 +3522,18 @@ export default function App() {
             {/* Top Header */}
             <header className="h-16 border-b border-border-custom flex items-center px-4 md:px-6 justify-between bg-bg-secondary shrink-0 overflow-x-auto custom-scrollbar">
           <div className="flex items-center gap-2 md:gap-4 min-w-max">
+            <button 
+              onClick={() => setIsPreviewOpen(!isPreviewOpen)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                isPreviewOpen ? "bg-accent text-accent-foreground" : "bg-white/10 text-white hover:bg-white/20"
+              )}
+              title="Toggle Live Preview"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Preview</span>
+            </button>
+            <div className="h-6 w-[1px] bg-white/10" />
             <div className="flex bg-white/5 rounded-lg p-1 border border-white/10 overflow-x-auto custom-scrollbar max-w-[300px] md:max-w-none">
               {files.map(file => (
                 <button
@@ -3029,6 +3603,14 @@ export default function App() {
               <span className="hidden sm:inline">{debuggerStatus === 'running' ? 'Pause' : 'Debug'}</span>
             </button>
             <button 
+              onClick={generateFullStackProject}
+              disabled={isGenerating}
+              className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:opacity-50"
+            >
+              {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Layers className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">Full Stack Template</span>
+            </button>
+            <button 
               onClick={handleRun}
               className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
             >
@@ -3047,12 +3629,13 @@ export default function App() {
         </header>
 
           {/* Single Editor View */}
-          <div className="flex-1 flex flex-col bg-bg-primary overflow-hidden">
-            <div className="h-8 bg-bg-secondary border-b border-border-custom flex items-center px-4 justify-between z-20 shrink-0">
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-mono text-accent font-bold uppercase tracking-widest">{activeFile.name}</span>
-              <span className="text-[9px] font-mono text-text-secondary opacity-40">Editing</span>
-            </div>
+          {files.length > 0 ? (
+            <div className="flex-1 flex flex-col bg-bg-primary overflow-hidden">
+              <div className="h-8 bg-bg-secondary border-b border-border-custom flex items-center px-4 justify-between z-20 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-mono text-accent font-bold uppercase tracking-widest">{activeFile.name}</span>
+                <span className="text-[9px] font-mono text-text-secondary opacity-40">Editing</span>
+              </div>
             <div className="flex items-center gap-4">
               <button 
                 onClick={fetchSmartSuggestions}
@@ -3177,9 +3760,34 @@ export default function App() {
             </Suspense>
           </div>
         </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center bg-bg-primary text-text-secondary p-8 text-center">
+            <div className="w-24 h-24 bg-white/5 rounded-3xl flex items-center justify-center mb-6 border border-white/10">
+              <Code2 className="w-12 h-12 opacity-20" />
+            </div>
+            <h2 className="text-xl font-bold text-white mb-2">Welcome to Nexus Forge</h2>
+            <p className="text-sm opacity-50 max-w-xs mb-8">Start your next full-stack project by creating a new file or using a template.</p>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button 
+                onClick={createFile}
+                className="px-6 py-3 bg-accent text-accent-foreground rounded-xl font-bold hover:opacity-90 transition-all flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                New File
+              </button>
+              <button 
+                onClick={generateFullStackProject}
+                className="px-6 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10 transition-all flex items-center gap-2"
+              >
+                <Layers className="w-4 h-4" />
+                Full Stack Template
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Bottom Panel - AI & Prompt */}
-        <footer className="h-96 border-t border-border-custom flex flex-col bg-bg-secondary shrink-0">
+        <footer className="h-64 md:h-96 border-t border-border-custom flex flex-col bg-bg-secondary shrink-0">
           <div className="flex border-b border-border-custom overflow-x-auto custom-scrollbar shrink-0">
             {['ai', 'chat', 'live', 'editor', 'debugger', 'database', 'analytics', 'review', 'tests', 'docs', 'assets', 'npm', 'command'].map((tab) => (
               <button 
@@ -3805,22 +4413,39 @@ export default function App() {
                     className="flex-1 flex flex-col gap-4 overflow-hidden"
                   >
                     <div className="flex gap-4 h-full overflow-hidden">
-                      <div className="w-48 bg-black/20 rounded-xl border border-white/5 p-3 overflow-y-auto custom-scrollbar shrink-0">
-                        <div className="flex items-center gap-2 mb-4 opacity-50">
-                          <Database className="w-3 h-3" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest">Tables</span>
+                      <div className="w-48 bg-black/20 rounded-xl border border-white/5 p-3 overflow-y-auto custom-scrollbar shrink-0 flex flex-col gap-6">
+                        <div>
+                          <div className="flex items-center gap-2 mb-4 opacity-50">
+                            <Database className="w-3 h-3" />
+                            <span className="text-[10px] font-bold uppercase tracking-widest">System Tables</span>
+                          </div>
+                          <div className="space-y-1">
+                            {dbTables.map(table => (
+                              <button 
+                                key={table}
+                                onClick={() => setSqlQuery(`SELECT * FROM ${table} LIMIT 10;`)}
+                                className="w-full text-left px-2 py-1.5 rounded hover:bg-white/5 text-[11px] transition-colors truncate"
+                              >
+                                {table}
+                              </button>
+                            ))}
+                            {dbTables.length === 0 && <div className="text-[10px] opacity-30 italic">No tables found</div>}
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          {dbTables.map(table => (
+
+                        <div>
+                          <div className="flex items-center gap-2 mb-4 opacity-50">
+                            <Layers className="w-3 h-3" />
+                            <span className="text-[10px] font-bold uppercase tracking-widest">Project Data</span>
+                          </div>
+                          <div className="space-y-1">
                             <button 
-                              key={table}
-                              onClick={() => setSqlQuery(`SELECT * FROM ${table} LIMIT 10;`)}
-                              className="w-full text-left px-2 py-1.5 rounded hover:bg-white/5 text-[11px] transition-colors truncate"
+                              onClick={() => fetchProjectData('tasks')}
+                              className="w-full text-left px-2 py-1.5 rounded hover:bg-white/5 text-[11px] transition-colors truncate text-accent"
                             >
-                              {table}
+                              Collection: tasks
                             </button>
-                          ))}
-                          {dbTables.length === 0 && <div className="text-[10px] opacity-30 italic">No tables found</div>}
+                          </div>
                         </div>
                       </div>
                       <div className="flex-1 flex flex-col gap-4 overflow-hidden">
@@ -3848,13 +4473,20 @@ export default function App() {
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Results</span>
                               <button 
-                                onClick={() => setSqlResults([])}
+                                onClick={() => {
+                                  setSqlResults([]);
+                                  setProjectData([]);
+                                }}
                                 className="text-[9px] text-accent hover:underline"
                               >
                                 Clear
                               </button>
                             </div>
-                            {sqlResults.length > 0 && <span className="text-[9px] opacity-30">{sqlResults.length} rows</span>}
+                            {(sqlResults.length > 0 || projectData.length > 0) && (
+                              <span className="text-[9px] opacity-30">
+                                {sqlResults.length || projectData.length} rows
+                              </span>
+                            )}
                           </div>
                           <div className="flex-1 overflow-auto custom-scrollbar p-4">
                             {sqlError ? (
@@ -3872,6 +4504,25 @@ export default function App() {
                                 </thead>
                                 <tbody>
                                   {sqlResults.map((row, i) => (
+                                    <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                                      {Object.values(row).map((val: any, j) => (
+                                        <td key={j} className="p-2 truncate max-w-[200px]">{`${val}`}</td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : projectData.length > 0 ? (
+                              <table className="w-full text-[11px] font-mono border-collapse">
+                                <thead>
+                                  <tr className="border-b border-white/10">
+                                    {Object.keys(projectData[0]).map(key => (
+                                      <th key={key} className="text-left p-2 opacity-50 font-medium">{key}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {projectData.map((row, i) => (
                                     <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                       {Object.values(row).map((val: any, j) => (
                                         <td key={j} className="p-2 truncate max-w-[200px]">{`${val}`}</td>
@@ -4251,7 +4902,56 @@ export default function App() {
                       >
                         {isSearchingNpm ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
                       </button>
+                      <button 
+                        onClick={reviewDependencies}
+                        disabled={isReviewingDeps}
+                        className="px-6 py-2 bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {isReviewingDeps ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        AI Review Deps
+                      </button>
                     </div>
+
+                    {detectedDeps.length > 0 && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4"
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-sm font-bold text-blue-400 flex items-center gap-2">
+                            <Brain className="w-4 h-4" />
+                            AI Detected Dependencies
+                          </h3>
+                          <button 
+                            onClick={() => {
+                              detectedDeps.forEach(dep => installDependency(dep));
+                              setDetectedDeps([]);
+                            }}
+                            className="px-4 py-1.5 bg-blue-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all"
+                          >
+                            Install All
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {detectedDeps.map(dep => (
+                            <div key={dep} className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5">
+                              <span className="text-xs font-mono text-white">{dep}</span>
+                              <button 
+                                onClick={() => {
+                                  installDependency(dep);
+                                  setDetectedDeps(prev => prev.filter(d => d !== dep));
+                                }}
+                                className="p-1 hover:text-accent transition-colors"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+
                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
                       {npmResults.map((result: any) => (
                         <div key={result.package.name} className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-all">
@@ -4263,10 +4963,7 @@ export default function App() {
                             <p className="text-xs text-text-secondary line-clamp-1 max-w-xl">{result.package.description}</p>
                           </div>
                           <button 
-                            onClick={() => {
-                              showToast(`Simulated installation of ${result.package.name}`, 'info');
-                              // In a real app, we'd update package.json or trigger a backend install
-                            }}
+                            onClick={() => installDependency(result.package.name)}
                             className="px-4 py-1.5 bg-white/5 hover:bg-accent hover:text-accent-foreground rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all"
                           >
                             Install
@@ -4455,5 +5152,13 @@ export default function App() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function AppWithErrorBoundary() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   );
 }

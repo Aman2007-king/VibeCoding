@@ -37,6 +37,13 @@ db.exec(`
     name TEXT NOT NULL,
     description TEXT
   );
+  CREATE TABLE IF NOT EXISTS user_project_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    collection_name TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 async function startServer() {
@@ -91,7 +98,7 @@ async function startServer() {
 
     (req.session as any).authOrigin = origin;
     const redirectUri = `${origin}/api/auth/github/callback`;
-    const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=user:email`;
+    const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo%20user:email`;
     res.json({ url });
   });
 
@@ -133,7 +140,8 @@ async function startServer() {
         name: githubUser.name || githubUser.login,
         email: email,
         avatar_url: githubUser.avatar_url,
-        provider: 'github'
+        provider: 'github',
+        accessToken: accessToken
       };
 
       db.prepare(`
@@ -207,7 +215,8 @@ async function startServer() {
         name: googleUser.name,
         email: googleUser.email,
         avatar_url: googleUser.picture,
-        provider: 'google'
+        provider: 'google',
+        accessToken: accessToken
       };
 
       db.prepare(`
@@ -316,6 +325,44 @@ async function startServer() {
     try {
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
       res.json({ success: true, tables });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // User Project Database API (Generic CRUD for user-written code)
+  app.post("/api/user-db/:projectId/:collection", (req, res) => {
+    const { projectId, collection } = req.params;
+    const data = JSON.stringify(req.body);
+    try {
+      const stmt = db.prepare("INSERT INTO user_project_data (project_id, collection_name, data) VALUES (?, ?, ?)");
+      const result = stmt.run(projectId, collection, data);
+      res.json({ success: true, id: result.lastInsertRowid });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/user-db/:projectId/:collection", (req, res) => {
+    const { projectId, collection } = req.params;
+    try {
+      const rows = db.prepare("SELECT id, data, created_at FROM user_project_data WHERE project_id = ? AND collection_name = ?").all(projectId, collection);
+      const results = rows.map((r: any) => ({
+        id: r.id,
+        ...JSON.parse(r.data),
+        created_at: r.created_at
+      }));
+      res.json({ success: true, results });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.delete("/api/user-db/:projectId/:collection/:id", (req, res) => {
+    const { projectId, collection, id } = req.params;
+    try {
+      db.prepare("DELETE FROM user_project_data WHERE project_id = ? AND collection_name = ? AND id = ?").run(projectId, collection, id);
+      res.json({ success: true });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }

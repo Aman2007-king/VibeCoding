@@ -6,7 +6,7 @@ export default function About({ onBack }: { onBack: () => void }) {
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary overflow-y-auto custom-scrollbar">
       {/* Hero Section */}
-      <section className="relative h-[60vh] flex items-center justify-center overflow-hidden">
+      <section className="relative h-[50vh] md:h-[60vh] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
             src="https://picsum.photos/seed/tech-team/1920/1080?blur=3" 
@@ -17,10 +17,10 @@ export default function About({ onBack }: { onBack: () => void }) {
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-bg-primary/50 to-bg-primary" />
         </div>
 
-        <div className="relative z-10 text-center space-y-6 px-4">
+        <div className="relative z-10 text-center space-y-4 md:space-y-6 px-4">
           <button 
             onClick={onBack}
-            className="inline-flex items-center gap-2 text-accent hover:text-white transition-colors mb-8 font-bold uppercase tracking-widest text-xs"
+            className="inline-flex items-center gap-2 text-accent hover:text-white transition-colors mb-4 md:mb-8 font-bold uppercase tracking-widest text-[10px] md:text-xs"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Forge
@@ -28,11 +28,11 @@ export default function About({ onBack }: { onBack: () => void }) {
           <motion.h1 
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="text-4xl md:text-8xl font-black tracking-tighter uppercase"
+            className="text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter uppercase"
           >
             About <span className="text-accent">Us.</span>
           </motion.h1>
-          <p className="text-text-secondary max-w-2xl mx-auto text-sm md:text-lg font-medium">
+          <p className="text-text-secondary max-w-2xl mx-auto text-sm md:text-lg font-medium opacity-80">
             We are a collective of engineers and designers dedicated to pushing the boundaries of human-machine collaboration.
           </p>
         </div>
@@ -40,46 +40,46 @@ export default function About({ onBack }: { onBack: () => void }) {
 
       {/* Mission & Vision */}
       <section className="max-w-7xl mx-auto px-6 py-12 md:py-24 grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-20 items-center">
-        <div className="space-y-8">
-          <div className="space-y-4">
+        <div className="space-y-6 md:space-y-8">
+          <div className="space-y-3 md:space-y-4">
             <h2 className="text-sm font-black text-accent uppercase tracking-[0.3em]">Our Mission</h2>
             <h3 className="text-3xl md:text-4xl font-black tracking-tight uppercase">Democratizing Intelligence.</h3>
           </div>
-          <p className="text-text-secondary leading-relaxed text-base md:text-lg">
+          <p className="text-text-secondary leading-relaxed text-base md:text-lg opacity-80">
             Nexus Forge was born from a simple idea: that coding should be as intuitive as speaking. We've built a platform that doesn't just "help" you code, but understands your vision and helps you manifest it into reality.
           </p>
-          <div className="grid grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 md:gap-8">
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-accent">
                 <Cpu className="w-4 h-4" />
                 <span className="text-xs font-black uppercase tracking-widest">Machine First</span>
               </div>
-              <p className="text-xs text-text-secondary">Optimized for the next generation of AI hardware.</p>
+              <p className="text-xs text-text-secondary opacity-70">Optimized for the next generation of AI hardware.</p>
             </div>
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-accent">
                 <Globe className="w-4 h-4" />
                 <span className="text-xs font-black uppercase tracking-widest">Global Reach</span>
               </div>
-              <p className="text-xs text-text-secondary">Empowering developers in over 150 countries.</p>
+              <p className="text-xs text-text-secondary opacity-70">Empowering developers in over 150 countries.</p>
             </div>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <img src="https://picsum.photos/seed/ai-robot/600/800" alt="AI Robot" className="rounded-3xl border border-white/10 shadow-2xl translate-y-12" referrerPolicy="no-referrer" />
-          <img src="https://picsum.photos/seed/tech-circuit/600/800" alt="Circuit" className="rounded-3xl border border-white/10 shadow-2xl" referrerPolicy="no-referrer" />
+          <img src="https://picsum.photos/seed/ai-robot/600/800" alt="AI Robot" className="rounded-2xl md:rounded-3xl border border-white/10 shadow-2xl translate-y-6 md:translate-y-12" referrerPolicy="no-referrer" />
+          <img src="https://picsum.photos/seed/tech-circuit/600/800" alt="Circuit" className="rounded-2xl md:rounded-3xl border border-white/10 shadow-2xl" referrerPolicy="no-referrer" />
         </div>
       </section>
 
       {/* Contact Section */}
-      <section className="bg-bg-secondary py-20 md:32">
-        <div className="max-w-4xl mx-auto px-6 text-center space-y-12 md:space-y-16">
-          <div className="space-y-4">
+      <section className="bg-bg-secondary py-16 md:py-32">
+        <div className="max-w-4xl mx-auto px-6 text-center space-y-10 md:space-y-16">
+          <div className="space-y-3 md:space-y-4">
             <h2 className="text-sm font-black text-accent uppercase tracking-[0.3em]">Get In Touch</h2>
             <h3 className="text-3xl md:text-6xl font-black tracking-tight uppercase">Let's Build Together.</h3>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 md:gap-8">
             <motion.div 
               whileHover={{ scale: 1.05 }}
               className="p-8 bg-bg-primary border border-white/5 rounded-[2rem] space-y-4"

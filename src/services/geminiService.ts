@@ -301,6 +301,28 @@ export const getSmartSuggestions = async (code: string, language: string, userKe
   return JSON.parse(response.text);
 };
 
+export const detectDependencies = async (code: string, language: string, userKey?: string) => {
+  const client = getAIClient(userKey);
+  const response = await withRetry(() => client.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `Analyze the following ${language} code and identify all third-party npm packages that are imported or required but not part of the standard library.
+    
+    Code:
+    ${code}
+    
+    Return a JSON array of strings, each being a package name (e.g., ["lodash", "axios", "express"]). If no packages are found, return an empty array [].`,
+    config: {
+      responseMimeType: "application/json",
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      responseSchema: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING }
+      }
+    }
+  }));
+  return JSON.parse(response.text);
+};
+
 export const chatWithAI = async (message: string, history: { role: string, parts: { text: string }[] }[], userKey?: string) => {
   const client = getAIClient(userKey);
   const chat = client.chats.create({
