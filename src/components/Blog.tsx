@@ -99,7 +99,7 @@ function Card3D({ children, className }: { children: React.ReactNode, className?
 
 export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, onNavigateAbout: () => void }) {
   return (
-    <div className="min-h-screen bg-bg-primary text-text-primary overflow-y-auto custom-scrollbar perspective-1000">
+    <div className="min-h-screen bg-bg-primary text-text-primary custom-scrollbar perspective-1000">
       {/* Hero Section */}
       <section className="relative h-screen flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">

@@ -52,6 +52,10 @@
     scrollbar-width: none;
   }
 
+  .custom-scrollbar {
+    overflow: auto;
+  }
+
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;

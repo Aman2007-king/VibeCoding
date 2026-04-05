@@ -22,7 +22,7 @@ const getAIClient = (userKey?: string) => {
   return ai;
 };
 
-export const generateProject = async (prompt: string, currentFiles: { name: string, code: string }[] = [], useThinking: boolean = false, userKey?: string) => {
+export const generateProject = async (prompt: string, currentFiles: { name: string, code: string }[] = [], useThinking: boolean = false, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const config: any = {
     temperature: 0.7,
@@ -46,8 +46,6 @@ export const generateProject = async (prompt: string, currentFiles: { name: stri
       required: ["files"]
     }
   };
-
-  const model = useThinking ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview";
 
   if (useThinking) {
     config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
@@ -83,14 +81,11 @@ export const generateProject = async (prompt: string, currentFiles: { name: stri
   }
 };
 
-export const generateCode = async (prompt: string, language: string = "javascript", useThinking: boolean = false, userKey?: string) => {
+export const generateCode = async (prompt: string, language: string = "javascript", useThinking: boolean = false, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const config: any = {
     temperature: 0.7,
   };
-
-  // Use Flash for speed, Pro only for thinking
-  const model = useThinking ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview";
 
   if (useThinking) {
     config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
@@ -109,13 +104,11 @@ export const generateCode = async (prompt: string, language: string = "javascrip
   return response.text;
 };
 
-export const generateCodeStream = async (prompt: string, language: string = "javascript", useThinking: boolean = false, onChunk: (text: string) => void, userKey?: string) => {
+export const generateCodeStream = async (prompt: string, language: string = "javascript", useThinking: boolean = false, onChunk: (text: string) => void, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const config: any = {
     temperature: 0.7,
   };
-
-  const model = useThinking ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview";
 
   if (useThinking) {
     config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
@@ -142,10 +135,10 @@ export const generateCodeStream = async (prompt: string, language: string = "jav
   return fullText;
 };
 
-export const fastFix = async (code: string, language: string, userKey?: string) => {
+export const fastFix = async (code: string, language: string, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const response = await withRetry(() => client.models.generateContent({
-    model: "gemini-3.1-flash-lite-preview",
+    model,
     contents: `Quickly identify and fix the most obvious bug in this ${language} code. Return ONLY the fixed code.
     Code:
     ${code}`,
@@ -156,10 +149,10 @@ export const fastFix = async (code: string, language: string, userKey?: string) 
   return response.text;
 };
 
-export const debugCode = async (code: string, language: string, userKey?: string) => {
+export const debugCode = async (code: string, language: string, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const response = await withRetry(() => client.models.generateContent({
-    model: "gemini-3-flash-preview", // Switched to flash for speed
+    model,
     contents: `Debug the following ${language} code. Identify errors, explain them, and provide the fixed code.
     Code:
     ${code}`,
@@ -170,10 +163,10 @@ export const debugCode = async (code: string, language: string, userKey?: string
   return response.text;
 };
 
-export const processVoiceCommand = async (transcript: string, userKey?: string) => {
+export const processVoiceCommand = async (transcript: string, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const response = await withRetry(() => client.models.generateContent({
-    model: "gemini-3-flash-preview", // Switched to flash for speed
+    model,
     contents: `The user said: "${transcript}". 
     Interpret this as a coding or IDE command. 
     Possible intents:
@@ -217,10 +210,10 @@ export const processVoiceCommand = async (transcript: string, userKey?: string) 
   return JSON.parse(response.text);
 };
 
-export const getGhostText = async (codeBefore: string, codeAfter: string, language: string, userKey?: string) => {
+export const getGhostText = async (codeBefore: string, codeAfter: string, language: string, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const response = await withRetry(() => client.models.generateContent({
-    model: "gemini-3.1-flash-lite-preview",
+    model,
     contents: `Act as an AI pair programmer. Provide a short, relevant code completion for the following context.
     Language: ${language}
     Code before cursor:
@@ -237,10 +230,10 @@ export const getGhostText = async (codeBefore: string, codeAfter: string, langua
   return response.text;
 };
 
-export const manipulateCode = async (code: string, language: string, action: string, userKey?: string) => {
+export const manipulateCode = async (code: string, language: string, action: string, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const response = await withRetry(() => client.models.generateContent({
-    model: "gemini-3-flash-preview", // Switched to flash for speed
+    model,
     contents: `Act as a senior software engineer. Perform the following action on the provided ${language} code snippet.
     Action: ${action}
     Code:
@@ -254,10 +247,10 @@ export const manipulateCode = async (code: string, language: string, action: str
   return response.text;
 };
 
-export const getSmartSuggestions = async (code: string, language: string, userKey?: string) => {
+export const getSmartSuggestions = async (code: string, language: string, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const response = await withRetry(() => client.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model,
     contents: `Act as a senior software engineer. Analyze the following ${language} code and provide 3-5 specific, actionable suggestions for improvement. 
     Focus on:
     - Performance
@@ -301,10 +294,10 @@ export const getSmartSuggestions = async (code: string, language: string, userKe
   return JSON.parse(response.text);
 };
 
-export const detectDependencies = async (code: string, language: string, userKey?: string) => {
+export const detectDependencies = async (code: string, language: string, userKey?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const response = await withRetry(() => client.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model,
     contents: `Analyze the following ${language} code and identify all third-party npm packages that are imported or required but not part of the standard library.
     
     Code:
@@ -323,12 +316,12 @@ export const detectDependencies = async (code: string, language: string, userKey
   return JSON.parse(response.text);
 };
 
-export const chatWithAI = async (message: string, history: { role: string, parts: { text: string }[] }[], userKey?: string) => {
+export const chatWithAI = async (message: string, history: { role: string, parts: { text: string }[] }[], userKey?: string, systemInstruction?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const chat = client.chats.create({
-    model: "gemini-3-flash-preview", // Switched to flash for speed
+    model,
     config: {
-      systemInstruction: "You are Nexus AI, a professional coding assistant. You help developers build, debug, and optimize their code. Be concise, technical, and helpful.",
+      systemInstruction: systemInstruction || "You are Nexus AI, a professional coding assistant. You help developers build, debug, and optimize their code. Be concise, technical, and helpful.",
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     },
     history,
@@ -338,12 +331,12 @@ export const chatWithAI = async (message: string, history: { role: string, parts
   return response.text;
 };
 
-export const chatWithAIStream = async (message: string, history: { role: string, parts: { text: string }[] }[], onChunk: (text: string) => void, userKey?: string) => {
+export const chatWithAIStream = async (message: string, history: { role: string, parts: { text: string }[] }[], onChunk: (text: string) => void, userKey?: string, systemInstruction?: string, model: string = "gemini-3-flash-preview") => {
   const client = getAIClient(userKey);
   const chat = client.chats.create({
-    model: "gemini-3-flash-preview",
+    model,
     config: {
-      systemInstruction: "You are Nexus AI, a professional coding assistant. You help developers build, debug, and optimize their code. Be concise, technical, and helpful.",
+      systemInstruction: systemInstruction || "You are Nexus AI, a professional coding assistant. You help developers build, debug, and optimize their code. Be concise, technical, and helpful.",
       thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     },
     history,

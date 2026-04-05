@@ -29,7 +29,7 @@ export const ApiPlayground: React.FC<ApiPlaygroundProps> = ({
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-bg-primary">
-      <div className="p-4 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+      <div className="p-4 space-y-4 custom-scrollbar flex-1">
         {/* URL Bar */}
         <div className="flex gap-2">
           <select 
@@ -114,7 +114,7 @@ export const ApiPlayground: React.FC<ApiPlaygroundProps> = ({
                 <span className="opacity-40">Time: {response.time}ms</span>
               </div>
             </div>
-            <div className="bg-black/40 rounded-xl border border-white/5 p-4 overflow-auto max-h-96 custom-scrollbar">
+            <div className="bg-black/40 rounded-xl border border-white/5 p-4 max-h-96 custom-scrollbar">
               <pre className="text-[11px] font-mono text-emerald-400/90 whitespace-pre-wrap">
                 {typeof response.data === 'object' 
                   ? JSON.stringify(response.data, null, 2) 

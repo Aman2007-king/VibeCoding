@@ -69,10 +69,12 @@ import {
   X,
   Info,
   Globe,
+  Cloud,
   PenTool,
   Server,
   FileText,
-  Lock
+  Lock,
+  Cpu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Markdown from 'react-markdown';
@@ -85,6 +87,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Blog from './components/Blog';
 import About from './components/About';
+import VercelClone from './components/VercelClone';
 import { ApiPlayground } from './components/ApiPlayground';
 import { Whiteboard } from './components/Whiteboard';
 
@@ -459,6 +462,15 @@ function App() {
   const [paletteSearch, setPaletteSearch] = useState('');
   const [isExplorerOpen, setIsExplorerOpen] = useState(true);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
+  const [floatingChatInput, setFloatingChatInput] = useState('');
+  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
+
+  const availableModels = [
+    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', desc: 'Fastest & Balanced' },
+    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', desc: 'Most Capable & Reasoning' },
+    { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite', desc: 'Lightweight & Efficient' },
+  ];
 
   const fetchRepos = useCallback(async () => {
     if (!githubToken) return;
@@ -659,7 +671,7 @@ function App() {
     avatar_url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Guest',
     provider: 'guest'
   });
-  const [view, setView] = useState<'ide' | 'blog' | 'about' | 'dashboard'>('ide');
+  const [view, setView] = useState<'ide' | 'blog' | 'about' | 'dashboard' | 'vercel-clone'>('ide');
   const [isPreviewFullScreen, setIsPreviewFullScreen] = useState(false);
   const [previewViewport, setPreviewViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [isDebuggerEnabled, setIsDebuggerEnabled] = useState(true);
@@ -748,7 +760,7 @@ function App() {
     if (!activeFile) return;
     setIsReviewingDeps(true);
     try {
-      const deps = await detectDependencies(activeFile.code, activeFile.language, userApiKey);
+      const deps = await detectDependencies(activeFile.code, activeFile.language, userApiKey, selectedModel);
       setDetectedDeps(deps);
       if (deps.length > 0) {
         showToast(`Detected ${deps.length} dependencies!`, "info");
@@ -786,7 +798,7 @@ function App() {
         1. index.html: A clean UI with a task list and input field.
         2. script.js: JavaScript that uses fetch() to interact with these endpoints.
         3. styles.css: Modern styling for the task manager.
-      `, [], useThinking, userApiKey);
+      `, [], useThinking, userApiKey, selectedModel);
       if (result && result.files) {
         const newFiles = result.files.map((f: any, idx: number) => ({
           id: Date.now() + idx,
@@ -814,7 +826,7 @@ function App() {
     setIsAnalyzing(true);
     setActiveTab('ai'); // Switch to AI tab to show loading
     try {
-      const suggestions = await getSmartSuggestions(activeFile.code, activeFile.language, userApiKey);
+      const suggestions = await getSmartSuggestions(activeFile.code, activeFile.language, userApiKey, selectedModel);
       setSmartSuggestions(suggestions);
       setActiveTab('ai'); // Keep it on AI tab, but we'll render suggestions there
     } catch (err) {
@@ -920,7 +932,8 @@ function App() {
               textBefore.slice(-500), // Context window
               textAfter.slice(0, 200),
               model.getLanguageId(),
-              userApiKey
+              userApiKey,
+              selectedModel
             );
 
             if (!suggestion) return;
@@ -1066,7 +1079,7 @@ function App() {
     if (!activeFile) return;
     setIsGenerating(true);
     try {
-      const refactored = await manipulateCode(activeFile.code, "Refactor this code for better performance, readability, and modern standards. Keep the logic the same but improve the implementation.", activeFile.language, userApiKey);
+      const refactored = await manipulateCode(activeFile.code, "Refactor this code for better performance, readability, and modern standards. Keep the logic the same but improve the implementation.", activeFile.language, userApiKey, selectedModel);
       updateFile(activeFileId, { code: refactored });
       setAiResponse(`Refactored ${activeFile.name} successfully.`);
       confetti({ 
@@ -1085,11 +1098,11 @@ function App() {
     setIsGenerating(true);
     setActiveTab('ai');
     try {
-      const command = await processVoiceCommand(text, userApiKey);
+      const command = await processVoiceCommand(text, userApiKey, selectedModel);
       setAiResponse(`Voice Command Interpreted: ${command.description}`);
       
       if (command.intent === 'build') {
-        const generated = await generateCode(command.description, command.suggestedLanguage, useThinking, userApiKey);
+        const generated = await generateCode(command.description, command.suggestedLanguage, useThinking, userApiKey, selectedModel);
         // For multi-file, we'll just update the active file for now
         updateFile(activeFileId, { code: generated, language: command.suggestedLanguage });
       } else if (command.intent === 'fix') {
@@ -1153,7 +1166,7 @@ function App() {
       } else if (command.intent === 'explain') {
         setActiveTab('ai');
         setAiResponse('Explaining current code...');
-        const explanation = await chatWithAI(`Explain the following ${activeFile.language} code:\n\n${activeFile.code}`, [], userApiKey);
+        const explanation = await chatWithAI(`Explain the following ${activeFile.language} code:\n\n${activeFile.code}`, [], userApiKey, undefined, selectedModel);
         setAiResponse(explanation);
       } else if (command.intent === 'review') {
         setActiveTab('review');
@@ -1211,7 +1224,7 @@ function App() {
     try {
       if (isProjectMode) {
         setAiResponse('Generating full project structure...');
-        const project = await generateProject(aiPrompt, files, useThinking, userApiKey);
+        const project = await generateProject(aiPrompt, files, useThinking, userApiKey, selectedModel);
         
         // Update existing files and create new ones
         const newFiles = [...files];
@@ -1238,7 +1251,7 @@ function App() {
       } else {
         const generated = await generateCodeStream(aiPrompt, activeFile.language, useThinking, (text) => {
           setAiResponse(text);
-        }, userApiKey);
+        }, userApiKey, selectedModel);
         
         // Strip markdown code blocks if present
         const cleanCode = generated.replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
@@ -1262,7 +1275,7 @@ function App() {
     setIsGenerating(true);
     setActiveTab('ai');
     try {
-      const fixed = await fastFix(activeFile.code, activeFile.language, userApiKey);
+      const fixed = await fastFix(activeFile.code, activeFile.language, userApiKey, selectedModel);
       updateFile(activeFileId, { code: fixed });
       setAiResponse('Applied a fast fix using Gemini Flash-Lite.');
     } catch (error) {
@@ -1276,7 +1289,7 @@ function App() {
     setIsDebugging(true);
     setActiveTab('ai');
     try {
-      const debugResult = await debugCode(activeFile.code, activeFile.language, userApiKey);
+      const debugResult = await debugCode(activeFile.code, activeFile.language, userApiKey, selectedModel);
       setAiResponse(debugResult);
     } catch (error) {
       setAiResponse('Error debugging code.');
@@ -1285,10 +1298,11 @@ function App() {
     }
   };
 
-  const handleChatSend = async () => {
-    if (!chatInput.trim() || isChatStreaming) return;
-    const userMsg = chatInput;
-    setChatInput('');
+  const handleChatSend = async (customInput?: string) => {
+    const input = customInput || chatInput;
+    if (!input.trim() || isChatStreaming) return;
+    const userMsg = input;
+    if (!customInput) setChatInput('');
     setIsChatStreaming(true);
     
     // Create the history for the AI (everything before this message)
@@ -1302,6 +1316,11 @@ function App() {
     
     // Add a placeholder for AI response
     setChatHistory(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
+
+    const systemInstruction = `You are Nexus AI, a professional coding assistant. You help developers build, debug, and optimize their code. Be concise, technical, and helpful.
+    Current File: ${activeFile.name}
+    Code Context:
+    ${activeFile.code}`;
 
     try {
       let fullAiResponse = '';
@@ -1318,7 +1337,9 @@ function App() {
             return newHistory;
           });
         },
-        userApiKey
+        userApiKey,
+        systemInstruction,
+        selectedModel
       );
       saveChatMessageToFirestore('assistant', fullAiResponse);
     } catch (error) {
@@ -1369,7 +1390,8 @@ function App() {
           fullResponse += chunk;
           setAiResponse(fullResponse);
         },
-        userApiKey
+        userApiKey,
+        selectedModel
       );
       showToast(`${pattern} boilerplate generated!`, 'success');
     } catch (err: any) {
@@ -1390,26 +1412,40 @@ function App() {
     
     try {
       const session = await ai.live.connect({
-        model: "gemini-2.5-flash-native-audio-preview-09-2025",
+        model: 'gemini-3.1-flash-live-preview',
         config: {
           responseModalities: [Modality.AUDIO],
+          outputAudioTranscription: {},
+          inputAudioTranscription: {},
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: "You are Nexus AI, a real-time coding companion. Talk to the developer naturally about their code and provide guidance.",
+          systemInstruction: `You are Nexus AI, a real-time coding companion. Talk to the developer naturally about their code and provide guidance.
+          Current File: ${activeFile.name}
+          Code:
+          ${activeFile.code}`,
         },
         callbacks: {
           onopen: () => {
             setIsLiveActive(true);
             setLiveTranscription(prev => [...prev, "Nexus AI: Connected. How can I help you today?"]);
           },
-          onmessage: (message) => {
-            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+          onmessage: (message: any) => {
+            // Handle audio output
+            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio) {
               const audioBlob = b64toBlob(base64Audio, 'audio/pcm');
               const audioUrl = URL.createObjectURL(audioBlob);
               const audio = new Audio(audioUrl);
               audio.play();
+            }
+
+            // Handle transcriptions
+            if (message.serverContent?.modelTurn?.parts?.[0]?.text) {
+              setLiveTranscription(prev => [...prev, `Nexus AI: ${message.serverContent.modelTurn.parts[0].text}`]);
+            }
+            if (message.serverContent?.userTurn?.parts?.[0]?.text) {
+              setLiveTranscription(prev => [...prev, `You: ${message.serverContent.userTurn.parts[0].text}`]);
             }
           },
           onclose: () => setIsLiveActive(false),
@@ -1475,11 +1511,6 @@ function App() {
   const handleImportRepo = async () => {
     if (!githubToken || !selectedRepo) return;
     
-    if (files.length > 0) {
-      const confirm = window.confirm('This will replace your current project files. Are you sure?');
-      if (!confirm) return;
-    }
-    
     showToast(`Importing ${selectedRepo.name}...`, 'info');
     setIsFetchingRepos(true);
     
@@ -1503,7 +1534,7 @@ function App() {
       });
       
       const newFiles: FileState[] = [];
-      let nextId = 1000; // Start high to avoid collision with initial files
+      let nextId = Date.now();
       
       // Map paths to IDs for parent tracking
       const pathToId: Record<string, number> = {};
@@ -1511,9 +1542,10 @@ function App() {
       // Sort by path length to ensure parents are processed before children
       const sortedTree = [...treeData.tree].sort((a, b) => (a.path?.length || 0) - (b.path?.length || 0));
       
-      // Filter for files and small folders (limit to 50 items for performance)
-      const items = sortedTree.slice(0, 50);
+      // Filter for files and folders (limit to 150 items for performance)
+      const items = sortedTree.slice(0, 150);
       
+      // First pass: Create all items (folders and file placeholders)
       for (const item of items) {
         if (!item.path) continue;
         
@@ -1526,23 +1558,11 @@ function App() {
         pathToId[item.path] = id;
         
         if (item.type === 'blob') {
-          // Fetch file content
-          const { data: fileContent } = await octokit.rest.repos.getContent({
-            owner: selectedRepo.owner.login,
-            repo: selectedRepo.name,
-            path: item.path,
-          });
-          
-          let code = '';
-          if (!Array.isArray(fileContent) && fileContent.type === 'file') {
-            code = decodeURIComponent(escape(atob(fileContent.content)));
-          }
-          
           newFiles.push({
             id,
             name: fileName,
-            code,
-            language: fileName.split('.').pop() || 'javascript',
+            code: '', // Will be filled in second pass
+            language: getLanguageFromFilename(fileName),
             type: 'file',
             parentId
           });
@@ -1558,10 +1578,50 @@ function App() {
           });
         }
       }
+
+      // Second pass: Fetch file contents in parallel with concurrency limit
+      const fileItems = items.filter(item => item.type === 'blob');
+      const concurrencyLimit = 10;
+      for (let i = 0; i < fileItems.length; i += concurrencyLimit) {
+        const batch = fileItems.slice(i, i + concurrencyLimit);
+        await Promise.all(batch.map(async (item) => {
+          try {
+            const { data: fileContent } = await octokit.rest.repos.getContent({
+              owner: selectedRepo.owner.login,
+              repo: selectedRepo.name,
+              path: item.path!,
+            });
+            
+            if (!Array.isArray(fileContent) && fileContent.type === 'file') {
+              const fileId = pathToId[item.path!];
+              const fileIndex = newFiles.findIndex(f => f.id === fileId);
+              if (fileIndex !== -1) {
+                try {
+                  // Use TextDecoder for better UTF-8 support
+                  const binaryString = atob(fileContent.content);
+                  const bytes = new Uint8Array(binaryString.length);
+                  for (let j = 0; j < binaryString.length; j++) {
+                    bytes[j] = binaryString.charCodeAt(j);
+                  }
+                  newFiles[fileIndex].code = new TextDecoder().decode(bytes);
+                } catch (e) {
+                  newFiles[fileIndex].code = '// Binary or non-UTF8 file content';
+                }
+              }
+            }
+          } catch (error) {
+            console.error(`Failed to fetch content for ${item.path}:`, error);
+          }
+        }));
+      }
       
       if (newFiles.length > 0) {
         setFiles(newFiles);
         setIsGitInitialized(true);
+        const firstFile = newFiles.find(f => f.type === 'file');
+        if (firstFile) {
+          setActiveFileId(firstFile.id);
+        }
         showToast(`Successfully imported ${newFiles.length} items from ${selectedRepo.name}`, 'success');
       } else {
         showToast('Repository appears to be empty', 'info');
@@ -1678,7 +1738,7 @@ function App() {
     setAiResponse(`AI is performing: ${action}...`);
 
     try {
-      const result = await manipulateCode(selectedText, activeFile.language, action, userApiKey);
+      const result = await manipulateCode(selectedText, activeFile.language, action, userApiKey, selectedModel);
       editor.executeEdits('ai-manipulation', [
         {
           range: selection,
@@ -1759,7 +1819,8 @@ function App() {
                 selectedText, 
                 "Refactor this code for better performance, readability, and modern standards. Keep the logic the same but improve the implementation.", 
                 currentFile?.language || 'javascript', 
-                userApiKey
+                userApiKey,
+                selectedModel
               );
               ed.executeEdits('nexus-ai', [{
                 range: selection,
@@ -1790,7 +1851,7 @@ function App() {
           setIsGenerating(true);
           setActiveTab('ai');
           try {
-            const explanation = await chatWithAI(`Explain this code snippet in detail:\n\n${selectedText}`, [], userApiKey);
+            const explanation = await chatWithAI(`Explain this code snippet in detail:\n\n${selectedText}`, [], userApiKey, undefined, selectedModel);
             setAiResponse(explanation);
           } catch (err) {
             console.error('Explain selection error:', err);
@@ -2470,7 +2531,7 @@ function App() {
     setIsAnalyzing(true);
     try {
       const allCode = files.map(f => `FILE: ${f.name}\n${f.code}`).join('\n---\n');
-      const result = await chatWithAI(`Perform a security and performance audit on this project. Identify vulnerabilities, bottlenecks, and suggest improvements.\n\n${allCode}`, [], userApiKey);
+      const result = await chatWithAI(`Perform a security and performance audit on this project. Identify vulnerabilities, bottlenecks, and suggest improvements.\n\n${allCode}`, [], userApiKey, undefined, selectedModel);
       setReviewResult(result);
       setActiveTab('review');
     } catch (err) {
@@ -2485,7 +2546,7 @@ function App() {
     try {
       const activeFile = files.find(f => f.id === activeFileId);
       if (!activeFile) return;
-      const result = await chatWithAI(`Generate Vitest unit tests for the following code. Return ONLY the test code.\n\n${activeFile.code}`, [], userApiKey);
+      const result = await chatWithAI(`Generate Vitest unit tests for the following code. Return ONLY the test code.\n\n${activeFile.code}`, [], userApiKey, undefined, selectedModel);
       // In a real app, we'd save this to a file and run it. 
       // For demo, we'll simulate running it.
       setTestResults([
@@ -2512,7 +2573,7 @@ function App() {
     setIsAnalyzing(true);
     try {
       const allCode = files.map(f => `FILE: ${f.name}\n${f.code}`).join('\n---\n');
-      const result = await chatWithAI(`Generate comprehensive API documentation for this project in Markdown format. Include endpoint descriptions, data models, and usage examples.\n\n${allCode}`, [], userApiKey);
+      const result = await chatWithAI(`Generate comprehensive API documentation for this project in Markdown format. Include endpoint descriptions, data models, and usage examples.\n\n${allCode}`, [], userApiKey, undefined, selectedModel);
       setDocsContent(result);
       setActiveTab('docs');
     } catch (err) {
@@ -2621,6 +2682,10 @@ function App() {
     return <About onBack={() => setView('ide')} />;
   }
 
+  if (view === 'vercel-clone') {
+    return <VercelClone onBack={() => setView('ide')} />;
+  }
+
   return (
     <div className="flex h-screen w-full bg-bg-primary text-text-secondary font-sans overflow-hidden relative flex-col md:flex-row">
       {/* Mobile Header */}
@@ -2666,7 +2731,7 @@ function App() {
                   onChange={e => setPaletteSearch(e.target.value)}
                 />
               </div>
-              <div className="p-2 max-h-96 overflow-y-auto">
+              <div className="p-2 max-h-96 custom-scrollbar">
                 {filteredCommands.map(cmd => (
                   <button 
                     key={cmd.id}
@@ -2740,7 +2805,7 @@ function App() {
 
       {/* Sidebar - Navigation */}
       <aside className={cn(
-        "w-16 flex-col items-center py-6 gap-8 z-30 transition-all duration-300 overflow-y-auto custom-scrollbar glass-sidebar",
+        "w-16 flex-col items-center py-6 gap-8 z-30 transition-all duration-300 custom-scrollbar glass-sidebar",
         "fixed md:relative inset-y-0 left-0 md:flex",
         isMobileMenuOpen ? "flex translate-x-0 w-16 pt-20 pb-20" : "-translate-x-full md:translate-x-0"
       )}>
@@ -2756,7 +2821,7 @@ function App() {
             <Play className="w-5 h-5 fill-current" />
           </button>
         </div>
-        <nav className="flex flex-col gap-6 overflow-y-auto custom-scrollbar py-4">
+        <nav className="flex flex-col gap-6 custom-scrollbar py-4">
           <SidebarButton 
             icon={Folder} 
             active={isExplorerOpen} 
@@ -2828,18 +2893,6 @@ function App() {
             title="Source Control" 
           />
           <SidebarButton 
-            icon={Github} 
-            active={isSourceControlOpen && !!githubToken} 
-            onClick={() => {
-              setIsSourceControlOpen(true);
-              setIsApiPlaygroundOpen(false);
-              setIsWhiteboardOpen(false);
-              setIsExplorerOpen(false);
-              setIsSearchOpen(false);
-            }} 
-            title="GitHub Projects" 
-          />
-          <SidebarButton 
             icon={Globe} 
             active={isApiPlaygroundOpen} 
             onClick={() => {
@@ -2876,26 +2929,13 @@ function App() {
             title="About Us" 
           />
           <SidebarButton 
-            icon={Key} 
-            active={isApiKeyModalOpen} 
-            onClick={() => setIsApiKeyModalOpen(true)} 
-            title="API Key Settings" 
+            icon={Cloud} 
+            active={false} 
+            onClick={() => setView('vercel-clone')} 
+            title="Vercel Clone Architecture" 
           />
         </nav>
         <div className="mt-auto flex flex-col gap-6 shrink-0">
-          <SidebarButton 
-            icon={Github} 
-            active={!!githubToken} 
-            onClick={handleGithubConnect} 
-            title="Connect GitHub" 
-            className={githubToken ? "text-emerald-400" : ""}
-          />
-          <SidebarButton 
-            icon={Settings} 
-            onClick={() => setView('about')} 
-            title="Settings" 
-            className="text-text-secondary"
-          />
           
           <div className="pt-4 border-t border-white/5 flex flex-col items-center gap-4">
             {currentUser ? (
@@ -2938,74 +2978,6 @@ function App() {
       </aside>
 
       {/* Auth Modal */}
-      {/* API Key Modal */}
-      <AnimatePresence>
-        {isApiKeyModalOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="w-full max-w-md bg-bg-secondary border border-white/10 rounded-3xl p-8 space-y-6"
-            >
-              <div className="flex items-center gap-3 text-accent">
-                <Key className="w-6 h-6" />
-                <h2 className="text-xl font-bold">AI API Configuration</h2>
-              </div>
-              <p className="text-sm text-text-secondary">
-                By default, Nexus Forge uses a shared free API key. For faster processing and higher limits, you can provide your own Gemini API key.
-              </p>
-              <div className="space-y-2">
-                <label htmlFor="gemini-api-key" className="text-[10px] font-mono uppercase tracking-widest opacity-40">Your Gemini API Key</label>
-                <input 
-                  id="gemini-api-key"
-                  name="gemini-api-key"
-                  type="password"
-                  value={userApiKey}
-                  onChange={(e) => setUserApiKey(e.target.value)}
-                  placeholder="Paste your key here..."
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-accent outline-none"
-                />
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3 pt-4">
-                <button 
-                  onClick={() => {
-                    setUserApiKey('');
-                    setIsApiKeyModalOpen(false);
-                  }}
-                  className="flex-1 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl font-bold text-sm transition-all"
-                >
-                  Clear Key
-                </button>
-                <button 
-                  onClick={() => setIsApiKeyModalOpen(false)}
-                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm transition-all"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={() => {
-                    if (user && userApiKey) saveApiKey(userApiKey);
-                    setIsApiKeyModalOpen(false);
-                    if (userApiKey) showToast('Custom API key is now active!', 'success');
-                  }}
-                  className="flex-1 py-3 bg-accent text-accent-foreground rounded-xl font-bold text-sm hover:opacity-90 transition-all"
-                >
-                  Save & Close
-                </button>
-              </div>
-              <p className="text-[10px] text-center opacity-30">
-                {user ? 'Your key is stored securely in your profile.' : 'Your key is stored locally in your browser session and never sent to our servers.'}
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Source Control Panel */}
       <AnimatePresence>
         {isSourceControlOpen && (
@@ -3042,18 +3014,11 @@ function App() {
               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            <div className="flex-1 p-4 space-y-6 custom-scrollbar">
               {!githubToken ? (
                 <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
                   <Github className="w-12 h-12 opacity-10" />
-                  <p className="text-xs opacity-50">Connect your GitHub account to access your repositories.</p>
-                  <button 
-                    onClick={handleGithubConnect}
-                    className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 transition-all flex items-center gap-2"
-                  >
-                    <Github className="w-4 h-4" />
-                    Connect GitHub
-                  </button>
+                  <p className="text-xs opacity-50">GitHub integration is currently disabled.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -3112,7 +3077,7 @@ function App() {
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+                    <div className="space-y-2 max-h-64 pr-1 custom-scrollbar">
                       {repositories.filter(r => r.name.toLowerCase().includes(repoSearchQuery.toLowerCase())).length > 0 ? (
                         repositories
                           .filter(r => r.name.toLowerCase().includes(repoSearchQuery.toLowerCase()))
@@ -3322,7 +3287,7 @@ function App() {
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            <div className="flex-1 p-4 space-y-6 custom-scrollbar">
               <div className="space-y-3">
                 <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">Presets</label>
                 <div className="grid grid-cols-1 gap-2">
@@ -3412,7 +3377,7 @@ function App() {
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto py-2">
+            <div className="flex-1 py-2 custom-scrollbar">
               {files.filter(f => f.parentId === null).map(file => (
                 <div key={file.id}>
                   <FileItem 
@@ -3483,7 +3448,7 @@ function App() {
                 />
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-4">
+            <div className="flex-1 p-2 space-y-4 custom-scrollbar">
               {searchResults.length > 0 ? (
                 <div className="space-y-4">
                   <p className="px-2 text-[10px] uppercase tracking-widest opacity-40 font-bold">
@@ -3616,7 +3581,7 @@ function App() {
       {/* Main Content - Editor & AI */}
       <main className="flex-1 flex flex-col min-w-0">
         {view === 'dashboard' && (
-          <div className="flex-1 bg-bg-primary p-8 overflow-y-auto custom-scrollbar">
+          <div className="flex-1 bg-bg-primary p-8 custom-scrollbar">
             <div className="max-w-6xl mx-auto space-y-8">
               <header className="flex items-center justify-between">
                 <div>
@@ -3963,21 +3928,38 @@ function App() {
 
         {/* Bottom Panel - AI & Prompt */}
         <footer className="h-64 md:h-96 border-t border-border-custom flex flex-col bg-bg-secondary shrink-0">
-          <div className="flex border-b border-border-custom overflow-x-auto custom-scrollbar shrink-0">
-            {['ai', 'chat', 'live', 'editor', 'debugger', 'database', 'analytics', 'review', 'tests', 'docs', 'assets', 'npm', 'command'].map((tab) => (
-              <button 
-                key={tab}
-                onClick={() => setActiveTab(tab as any)}
-                className={cn(
-                  "px-4 md:px-6 py-3 md:py-2 text-[10px] font-mono uppercase tracking-widest transition-colors relative min-w-max",
-                  activeTab === tab ? "text-accent" : "opacity-40 hover:opacity-100",
-                  tab === 'command' && "md:hidden"
-                )}
+          <div className="flex border-b border-border-custom overflow-x-auto custom-scrollbar shrink-0 items-center justify-between pr-4">
+            <div className="flex">
+              {['ai', 'chat', 'live', 'editor', 'debugger', 'database', 'analytics', 'review', 'tests', 'docs', 'assets', 'npm', 'command'].map((tab) => (
+                <button 
+                  key={tab}
+                  onClick={() => setActiveTab(tab as any)}
+                  className={cn(
+                    "px-4 md:px-6 py-3 md:py-2 text-[10px] font-mono uppercase tracking-widest transition-colors relative min-w-max",
+                    activeTab === tab ? "text-accent" : "opacity-40 hover:opacity-100",
+                    tab === 'command' && "md:hidden"
+                  )}
+                >
+                  {tab === 'ai' ? 'AI Assistant' : tab === 'live' ? 'Live AI' : tab === 'npm' ? 'NPM Search' : tab}
+                  {activeTab === tab && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />}
+                </button>
+              ))}
+            </div>
+
+            <div className="hidden md:flex items-center gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-widest opacity-40">Model:</span>
+              <select 
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[10px] font-mono text-accent focus:outline-none focus:border-accent/50 transition-all cursor-pointer"
               >
-                {tab === 'ai' ? 'AI Assistant' : tab === 'live' ? 'Live AI' : tab === 'npm' ? 'NPM Search' : tab}
-                {activeTab === tab && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />}
-              </button>
-            ))}
+                {availableModels.map(m => (
+                  <option key={m.id} value={m.id} className="bg-bg-primary text-text-primary">
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-bg-secondary/50 backdrop-blur-md">
@@ -3993,7 +3975,7 @@ function App() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="flex-1 overflow-y-auto custom-scrollbar prose prose-invert prose-sm max-w-none"
+                    className="flex-1 custom-scrollbar prose prose-invert prose-sm max-w-none"
                   >
                     {isGenerating || isDebugging || isAnalyzing ? (
                       <div className="flex items-center gap-3 text-accent">
@@ -4194,7 +4176,7 @@ function App() {
                         Clear Chat
                       </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 custom-scrollbar">
+                    <div className="flex-1 space-y-4 mb-4 pr-2 custom-scrollbar">
                       {chatHistory.map((msg, i) => (
                         <div key={i} className={cn("flex gap-3", msg.role === 'user' ? "justify-end" : "justify-start")}>
                           <div className={cn(
@@ -4281,7 +4263,7 @@ function App() {
                         className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs focus:ring-0 focus:border-accent transition-all disabled:opacity-50"
                       />
                       <button 
-                        onClick={handleChatSend}
+                        onClick={() => handleChatSend()}
                         disabled={isChatStreaming || !chatInput.trim()}
                         className="p-2.5 bg-accent text-accent-foreground rounded-xl hover:opacity-90 transition-colors disabled:opacity-50"
                       >
@@ -4296,39 +4278,65 @@ function App() {
                     key="live-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="flex-1 flex flex-col items-center justify-center gap-6 overflow-y-auto custom-scrollbar"
+                    className="flex-1 flex flex-col items-center justify-start gap-6 p-6 custom-scrollbar"
                   >
-                    <div className="relative">
-                      <div className={cn(
-                        "w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500",
-                        isLiveActive ? "bg-accent/20 scale-110 shadow-[0_0_50px_var(--accent)]" : "bg-white/5"
-                      )}>
-                        <Volume2 className={cn("w-10 h-10", isLiveActive ? "text-accent animate-pulse" : "text-text-secondary")} />
+                    <div className="w-full flex flex-col items-center gap-6">
+                      <div className="relative">
+                        <div className={cn(
+                          "w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500",
+                          isLiveActive ? "bg-accent/20 scale-110 shadow-[0_0_50px_var(--accent)]" : "bg-white/5"
+                        )}>
+                          <Volume2 className={cn("w-10 h-10", isLiveActive ? "text-accent animate-pulse" : "text-text-secondary")} />
+                        </div>
+                        {isLiveActive && (
+                          <motion.div 
+                            animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+                            transition={{ duration: 2, repeat: Infinity }}
+                            className="absolute inset-0 border-2 border-accent rounded-full"
+                          />
+                        )}
                       </div>
-                      {isLiveActive && (
-                        <motion.div 
-                          animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-                          transition={{ duration: 2, repeat: Infinity }}
-                          className="absolute inset-0 border-2 border-accent rounded-full"
-                        />
-                      )}
+                      <div className="text-center space-y-2">
+                        <h3 className="text-white font-bold tracking-tight">Nexus Live AI</h3>
+                        <p className="text-xs text-zinc-500 max-w-xs">
+                          {isLiveActive ? "Connected. Start talking to Nexus AI for real-time guidance." : "Connect to start a real-time voice conversation with your AI coding companion."}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={startLiveMode}
+                        className={cn(
+                          "px-8 py-3 rounded-full text-xs font-bold transition-all flex items-center gap-2",
+                          isLiveActive ? "bg-red-500 text-white hover:bg-red-600" : "bg-accent text-accent-foreground hover:opacity-90"
+                        )}
+                      >
+                        {isLiveActive ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                        {isLiveActive ? "Disconnect Session" : "Start Live Session"}
+                      </button>
                     </div>
-                    <div className="text-center space-y-2">
-                      <h3 className="text-white font-bold tracking-tight">Nexus Live AI</h3>
-                      <p className="text-xs text-zinc-500 max-w-xs">
-                        {isLiveActive ? "Connected. Start talking to Nexus AI for real-time guidance." : "Connect to start a real-time voice conversation with your AI coding companion."}
-                      </p>
-                    </div>
-                    <button 
-                      onClick={startLiveMode}
-                      className={cn(
-                        "px-8 py-3 rounded-full text-xs font-bold transition-all flex items-center gap-2",
-                        isLiveActive ? "bg-red-500 text-white hover:bg-red-600" : "bg-accent text-accent-foreground hover:opacity-90"
-                      )}
-                    >
-                      {isLiveActive ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                      {isLiveActive ? "Disconnect Session" : "Start Live Session"}
-                    </button>
+
+                    {isLiveActive && (
+                      <div className="w-full flex-1 bg-black/20 rounded-2xl border border-white/5 p-4 flex flex-col overflow-hidden">
+                        <div className="flex items-center gap-2 mb-4 opacity-50">
+                          <MessageSquare className="w-3 h-3" />
+                          <span className="text-[10px] font-bold uppercase tracking-widest">Live Transcription</span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
+                          {liveTranscription.map((text, i) => (
+                            <motion.div 
+                              key={i}
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              className={cn(
+                                "text-[11px] p-2 rounded-lg",
+                                text.startsWith('You:') ? "bg-accent/10 text-accent ml-4" : "bg-white/5 text-text-secondary mr-4"
+                              )}
+                            >
+                              {text}
+                            </motion.div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 )}
 
@@ -4437,7 +4445,7 @@ function App() {
                             <Plus className="w-3 h-3" />
                           </button>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                        <div className="flex-1 p-4 space-y-2 custom-scrollbar">
                           {watchExpressions.map((expr, i) => (
                             <div key={i} className="flex flex-col gap-1 text-[11px] font-mono group border-b border-white/5 pb-2 last:border-0">
                               <div className="flex items-center justify-between">
@@ -4475,7 +4483,7 @@ function App() {
                           </div>
                           <span className="text-[9px] font-mono opacity-30">Local Scope</span>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
+                        <div className="flex-1 p-4 space-y-1 custom-scrollbar">
                           {Object.entries(inspectedVariables).length > 0 ? (
                             Object.entries(inspectedVariables)
                               .filter(([key]) => !['nexusDebugger', 'parent', 'opener', 'top', 'self', 'window', 'document', 'location', 'history', 'navigator', 'screen', 'chrome', 'speechSynthesis'].includes(key))
@@ -4508,7 +4516,7 @@ function App() {
                             </button>
                           </div>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                        <div className="flex-1 p-4 space-y-3 custom-scrollbar">
                           {Object.entries(breakpoints).map(([fId, lines]) => (
                             <div key={fId} className="space-y-2">
                               <div className="text-[10px] font-bold text-accent opacity-60 truncate">
@@ -4556,7 +4564,7 @@ function App() {
                         <div className="px-4 py-2 bg-white/5 border-b border-white/5">
                           <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Call Stack</span>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                        <div className="flex-1 p-4 space-y-2 custom-scrollbar">
                           {pausedLine ? (
                             <div className="space-y-2">
                               <div className="flex items-center gap-3 text-[11px] font-mono text-accent bg-accent/10 p-2 rounded-lg border border-accent/20">
@@ -4588,7 +4596,7 @@ function App() {
                     className="flex-1 flex flex-col gap-4 overflow-hidden"
                   >
                     <div className="flex gap-4 h-full overflow-hidden">
-                      <div className="w-48 bg-black/20 rounded-xl border border-white/5 p-3 overflow-y-auto custom-scrollbar shrink-0 flex flex-col gap-6">
+                      <div className="w-48 bg-black/20 rounded-xl border border-white/5 p-3 custom-scrollbar shrink-0 flex flex-col gap-6">
                         <div>
                           <div className="flex items-center gap-2 mb-4 opacity-50">
                             <Database className="w-3 h-3" />
@@ -4663,7 +4671,7 @@ function App() {
                               </span>
                             )}
                           </div>
-                          <div className="flex-1 overflow-auto custom-scrollbar p-4">
+                          <div className="flex-1 custom-scrollbar p-4">
                             {sqlError ? (
                               <div className="text-red-400 text-[11px] font-mono bg-red-400/10 p-3 rounded-lg border border-red-400/20">
                                 Error: {sqlError}
@@ -4723,7 +4731,7 @@ function App() {
                     key="analytics-content"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="flex-1 overflow-y-auto custom-scrollbar"
+                    className="flex-1 custom-scrollbar"
                   >
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-2">
@@ -4832,7 +4840,7 @@ function App() {
                         Run Full Audit
                       </button>
                     </div>
-                    <div className="flex-1 bg-black/20 rounded-2xl border border-white/5 p-6 overflow-y-auto custom-scrollbar prose prose-invert prose-sm max-w-none">
+                    <div className="flex-1 bg-black/20 rounded-2xl border border-white/5 p-6 custom-scrollbar prose prose-invert prose-sm max-w-none">
                       {reviewResult ? (
                         <Markdown>{reviewResult}</Markdown>
                       ) : (
@@ -4867,7 +4875,7 @@ function App() {
                       </button>
                     </div>
                     <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-hidden">
-                      <div className="bg-black/20 rounded-2xl border border-white/5 p-6 overflow-y-auto custom-scrollbar">
+                      <div className="bg-black/20 rounded-2xl border border-white/5 p-6 custom-scrollbar">
                         <h4 className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">Test Suite</h4>
                         <div className="space-y-3">
                           {testResults.map((test, i) => (
@@ -4894,7 +4902,7 @@ function App() {
                           )}
                         </div>
                       </div>
-                      <div className="bg-black/20 rounded-2xl border border-white/5 p-6 overflow-y-auto custom-scrollbar">
+                      <div className="bg-black/20 rounded-2xl border border-white/5 p-6 custom-scrollbar">
                         <h4 className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">Test Output</h4>
                         <div className="font-mono text-[11px] space-y-2">
                           {testResults.some(t => t.status === 'fail') && (
@@ -4938,7 +4946,7 @@ function App() {
                         Regenerate Docs
                       </button>
                     </div>
-                    <div className="flex-1 bg-black/20 rounded-2xl border border-white/5 p-8 overflow-y-auto custom-scrollbar prose prose-invert prose-sm max-w-none">
+                    <div className="flex-1 bg-black/20 rounded-2xl border border-white/5 p-8 custom-scrollbar prose prose-invert prose-sm max-w-none">
                       {docsContent ? (
                         <Markdown>{docsContent}</Markdown>
                       ) : (
@@ -5011,7 +5019,7 @@ function App() {
                       </motion.div>
                     )}
 
-                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 overflow-y-auto custom-scrollbar p-1">
+                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 custom-scrollbar p-1">
                       {assets.map((asset) => (
                         <div key={asset.id} className="group relative bg-white/5 border border-white/10 rounded-xl overflow-hidden hover:border-accent/50 transition-all aspect-square">
                           <img src={asset.url} alt={asset.name} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
@@ -5127,7 +5135,7 @@ function App() {
                       </motion.div>
                     )}
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
+                    <div className="flex-1 custom-scrollbar space-y-2">
                       {npmResults.map((result: any) => (
                         <div key={result.package.name} className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-all">
                           <div>
@@ -5166,7 +5174,7 @@ function App() {
                       <Terminal className="w-3 h-3 opacity-50" />
                       <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Integrated Terminal</span>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-2 text-[11px] custom-scrollbar">
+                    <div className="flex-1 p-4 space-y-2 text-[11px] custom-scrollbar">
                       <div className="text-accent opacity-50 mb-4">Nexus Forge Terminal v1.0.0</div>
                       {terminalHistory.map((entry, i) => (
                         <div key={i} className="space-y-1">
@@ -5199,7 +5207,7 @@ function App() {
 
             {/* Prompt Input */}
             <div className={cn(
-              "w-full md:w-96 border-t md:border-t-0 md:border-l border-border-custom p-4 flex flex-col gap-3 bg-bg-primary shrink-0",
+              "w-full md:w-96 border-t md:border-t-0 md:border-l border-border-custom p-4 flex flex-col gap-3 bg-bg-primary shrink-0 custom-scrollbar",
               activeTab === 'command' ? "flex" : "hidden md:flex"
             )}>
               <div className="flex items-center justify-between">
@@ -5326,6 +5334,105 @@ function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Floating Chat Bubble */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
+        <AnimatePresence>
+          {isFloatingChatOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="w-80 h-[450px] bg-bg-primary border border-border-custom rounded-2xl shadow-2xl flex flex-col overflow-hidden glass-sidebar"
+            >
+              <div className="p-4 border-b border-border-custom flex items-center justify-between bg-accent/5">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Nexus Live Chat</span>
+                </div>
+                <button 
+                  onClick={() => setIsFloatingChatOpen(false)}
+                  className="p-1 hover:bg-white/5 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                {chatHistory.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
+                    <MessageSquare className="w-8 h-8" />
+                    <p className="text-[10px] uppercase tracking-widest font-bold">Start a conversation about your code</p>
+                  </div>
+                ) : (
+                  chatHistory.map((msg, i) => (
+                    <div key={i} className={cn(
+                      "flex flex-col gap-1",
+                      msg.role === 'user' ? "items-end" : "items-start"
+                    )}>
+                      <div className={cn(
+                        "max-w-[85%] p-3 rounded-2xl text-[11px] leading-relaxed",
+                        msg.role === 'user' 
+                          ? "bg-accent text-accent-foreground rounded-tr-none" 
+                          : "bg-white/5 text-text-secondary rounded-tl-none border border-border-custom"
+                      )}>
+                        {msg.parts[0].text}
+                      </div>
+                    </div>
+                  ))
+                )}
+                {isChatStreaming && (
+                  <div className="flex justify-start">
+                    <div className="bg-white/5 text-text-secondary p-2 rounded-xl rounded-tl-none border border-border-custom flex items-center gap-2">
+                      <Loader2 className="w-3 h-3 animate-spin text-accent" />
+                      <span className="text-[9px] font-bold uppercase tracking-widest opacity-50">Thinking...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-border-custom bg-black/20">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={floatingChatInput}
+                    onChange={(e) => setFloatingChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && floatingChatInput.trim()) {
+                        handleChatSend(floatingChatInput);
+                        setFloatingChatInput('');
+                      }
+                    }}
+                    placeholder="Ask Nexus anything..."
+                    className="w-full bg-white/5 border border-border-custom rounded-xl py-2 pl-4 pr-10 text-[11px] focus:outline-none focus:border-accent transition-all"
+                  />
+                  <button 
+                    onClick={() => {
+                      if (floatingChatInput.trim()) {
+                        handleChatSend(floatingChatInput);
+                        setFloatingChatInput('');
+                      }
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-accent hover:bg-accent/10 rounded-lg transition-all"
+                  >
+                    <Send className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <button
+          onClick={() => setIsFloatingChatOpen(!isFloatingChatOpen)}
+          className={cn(
+            "w-12 h-12 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300",
+            isFloatingChatOpen ? "bg-red-500 rotate-90" : "bg-accent hover:scale-110"
+          )}
+        >
+          {isFloatingChatOpen ? <X className="w-6 h-6 text-white" /> : <MessageSquare className="w-6 h-6 text-accent-foreground" />}
+        </button>
+      </div>
     </div>
   );
 }
