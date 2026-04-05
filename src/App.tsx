@@ -88,6 +88,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Blog from './components/Blog';
 import About from './components/About';
 import VercelClone from './components/VercelClone';
+import Login from './components/Login';
 import { ApiPlayground } from './components/ApiPlayground';
 import { Whiteboard } from './components/Whiteboard';
 
@@ -2672,7 +2673,23 @@ function App() {
     return results;
   }, [files, globalSearchQuery]);
 
-  // Removed login check
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center gap-6">
+        <div className="w-16 h-16 bg-accent rounded-2xl flex items-center justify-center shadow-2xl shadow-accent/20 animate-bounce">
+          <Code2 className="w-10 h-10 text-white" />
+        </div>
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="w-6 h-6 text-accent animate-spin" />
+          <span className="text-[10px] font-black uppercase tracking-[0.4em] text-text-secondary opacity-40">Initializing Workspace</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <Login />;
+  }
 
   if (view === 'blog') {
     return <Blog onBack={() => setView('ide')} onNavigateAbout={() => setView('about')} />;
@@ -2683,7 +2700,7 @@ function App() {
   }
 
   if (view === 'vercel-clone') {
-    return <VercelClone onBack={() => setView('ide')} />;
+    return <VercelClone onBack={() => setView('ide')} currentUser={currentUser} />;
   }
 
   return (

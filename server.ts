@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import Database from "better-sqlite3";
@@ -8,11 +9,38 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import session from "express-session";
 import axios from "axios";
+import helmet from "helmet";
+import { rateLimit } from "express-rate-limit";
+import { z } from "zod";
+import crypto from "crypto";
+import validator from "validator";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Encryption Utility for sensitive data
+const ENCRYPTION_KEY = (process.env.ENCRYPTION_KEY || 'nexus_forge_encryption_key_32_chars_long_!!!').padEnd(32).slice(0, 32);
+const IV_LENGTH = 16;
+
+function encrypt(text: string) {
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+  let encrypted = cipher.update(text);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decrypt(text: string) {
+  const textParts = text.split(':');
+  const iv = Buffer.from(textParts.shift()!, 'hex');
+  const encryptedText = Buffer.from(textParts.join(':'), 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
+  let decrypted = decipher.update(encryptedText);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString();
+}
 
 const db = new Database("nexus.db");
 
@@ -44,6 +72,22 @@ db.exec(`
     data TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS vercel_projects (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    repo_url TEXT NOT NULL,
+    subdomain TEXT UNIQUE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS vercel_deployments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    logs TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES vercel_projects(id)
+  );
 `);
 
 async function startServer() {
@@ -57,7 +101,47 @@ async function startServer() {
   });
   const PORT = 3000;
 
+  // Trust proxy for secure cookies behind reverse proxy
+  app.set('trust proxy', 1);
+
+  // Security Middlewares
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "img-src": ["'self'", "data:", "https:", "http:"],
+        "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net"],
+        "connect-src": ["'self'", "https://api.github.com", "https://www.googleapis.com", "https://oauth2.googleapis.com", "wss:", "ws:", "http:", "https:"],
+        "frame-ancestors": ["'self'", "https://*.asia-east1.run.app", "https://*.google.com", "https://*.aistudio.google.com"],
+      },
+    },
+    frameguard: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false,
+  }));
+
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later." }
+  });
+  app.use("/api/", limiter);
+
   app.use(express.json());
+
+  // Input Sanitization Middleware (Basic XSS Protection) - MUST be after express.json()
+  app.use((req, res, next) => {
+    if (req.body && typeof req.body === 'object') {
+      for (const key in req.body) {
+        if (typeof req.body[key] === 'string') {
+          req.body[key] = validator.escape(req.body[key]);
+        }
+      }
+    }
+    next();
+  });
   app.use(session({
     secret: process.env.SESSION_SECRET || 'nexus_forge_super_secret_2007',
     resave: false,
@@ -247,12 +331,22 @@ async function startServer() {
   });
 
   // API Key Management
+  const keySchema = z.object({
+    name: z.string().min(1).max(50),
+    value: z.string().min(1).max(500)
+  });
+
   app.post("/api/keys", (req, res) => {
     if (!req.session || !(req.session as any).user) return res.status(401).json({ error: "Unauthorized" });
-    const { name, value } = req.body;
+    
+    const validation = keySchema.safeParse(req.body);
+    if (!validation.success) return res.status(400).json({ error: "Invalid input", details: validation.error.format() });
+
+    const { name, value } = validation.data;
     const userId = (req.session as any).user.id;
     try {
-      db.prepare("INSERT OR REPLACE INTO user_keys (user_id, key_name, key_value) VALUES (?, ?, ?)").run(userId, name, value);
+      const encryptedValue = encrypt(value);
+      db.prepare("INSERT OR REPLACE INTO user_keys (user_id, key_name, key_value) VALUES (?, ?, ?)").run(userId, name, encryptedValue);
       res.json({ success: true });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -264,7 +358,11 @@ async function startServer() {
     const userId = (req.session as any).user.id;
     try {
       const keys = db.prepare("SELECT key_name, key_value FROM user_keys WHERE user_id = ?").all(userId);
-      res.json({ success: true, keys });
+      const decryptedKeys = keys.map((k: any) => ({
+        key_name: k.key_name,
+        key_value: decrypt(k.key_value)
+      }));
+      res.json({ success: true, keys: decryptedKeys });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
@@ -305,6 +403,93 @@ async function startServer() {
       io.emit("user:leave", socket.id);
       console.log("User disconnected:", socket.id);
     });
+  });
+
+  // Vercel Clone API
+  const vercelProjectSchema = z.object({
+    name: z.string().min(1).max(50).regex(/^[a-zA-Z0-9\s-]+$/),
+    repo_url: z.string().url()
+  });
+
+  app.get("/api/vercel/projects", (req, res) => {
+    const userId = (req.session && (req.session as any).user) ? (req.session as any).user.id : 'guest';
+    try {
+      const projects = db.prepare("SELECT * FROM vercel_projects WHERE user_id = ?").all(userId);
+      res.json({ success: true, projects });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/vercel/projects", (req, res) => {
+    const userId = (req.session && (req.session as any).user) ? (req.session as any).user.id : 'guest';
+    
+    const validation = vercelProjectSchema.safeParse(req.body);
+    if (!validation.success) return res.status(400).json({ error: "Invalid input", details: validation.error.format() });
+
+    const { name, repo_url } = validation.data;
+    const id = Math.random().toString(36).substring(2, 9);
+    const subdomain = `${name.toLowerCase().replace(/\s+/g, '-')}-${id}.nexus.sh`;
+    try {
+      db.prepare("INSERT INTO vercel_projects (id, user_id, name, repo_url, subdomain) VALUES (?, ?, ?, ?, ?)").run(id, userId, name, repo_url, subdomain);
+      res.json({ success: true, project: { id, name, repo_url, subdomain } });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get("/api/vercel/projects/:id/deployments", (req, res) => {
+    const { id } = req.params;
+    try {
+      const deployments = db.prepare("SELECT * FROM vercel_deployments WHERE project_id = ? ORDER BY created_at DESC").all(id);
+      res.json({ success: true, deployments });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/vercel/deployments", async (req, res) => {
+    const { project_id } = req.body;
+    const deployment_id = `dep-${Math.random().toString(36).substring(2, 9)}`;
+    
+    try {
+      db.prepare("INSERT INTO vercel_deployments (id, project_id, status, logs) VALUES (?, ?, ?, ?)").run(deployment_id, project_id, 'BUILDING', '');
+      
+      // Start simulated build process
+      const steps = [
+        "Cloning repository...",
+        "Resolving dependencies...",
+        "Running build script...",
+        "Optimizing assets...",
+        "Uploading to S3...",
+        "Deployment ready!"
+      ];
+
+      let currentLogs = "";
+      res.json({ success: true, deployment_id });
+
+      // Simulate build logs over time
+      (async () => {
+        for (let i = 0; i < steps.length; i++) {
+          await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 2000));
+          const logLine = `[${new Date().toLocaleTimeString()}] ${steps[i]}\n`;
+          currentLogs += logLine;
+          
+          // Emit log to all clients (in a real app, we'd scope this to the user/project)
+          io.emit(`vercel:logs:${deployment_id}`, { log: logLine });
+          
+          if (i === steps.length - 1) {
+            db.prepare("UPDATE vercel_deployments SET status = ?, logs = ? WHERE id = ?").run('READY', currentLogs, deployment_id);
+            io.emit(`vercel:status:${deployment_id}`, { status: 'READY' });
+          } else {
+            db.prepare("UPDATE vercel_deployments SET logs = ? WHERE id = ?").run(currentLogs, deployment_id);
+          }
+        }
+      })();
+
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
   });
 
   // Database API
@@ -369,17 +554,34 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  const isProduction = process.env.NODE_ENV === "production";
+  const distPath = path.join(__dirname, "dist");
+  const distExists = fs.existsSync(distPath);
+
+  console.log(`[Nexus Forge] Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`[Nexus Forge] Dist Path: ${distPath} (Exists: ${distExists})`);
+
+  if (!isProduction) {
+    console.log("[Nexus Forge] Starting in development mode with Vite middleware...");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
+    if (distExists) {
+      console.log("[Nexus Forge] Starting in production mode, serving from dist...");
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    } else {
+      console.warn("[Nexus Forge] Production mode detected but 'dist' directory is missing! Falling back to root index.html (this may not work as expected).");
+      app.use(express.static(__dirname));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(__dirname, "index.html"));
+      });
+    }
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
@@ -387,4 +589,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
