@@ -8,13 +8,14 @@ export default defineConfig(({mode}) => {
   return {
     base: '/',
     plugins: [react(), tailwindcss()],
-    define: {
-      'process.env': {
-        NODE_ENV: JSON.stringify(mode),
-        GEMINI_API_KEY: JSON.stringify(env.GEMINI_API_KEY),
-      },
-      'global': 'globalThis',
-    },
+    // ✅ Fixed - safe even if key missing
+define: {
+  'process.env': {
+    NODE_ENV: JSON.stringify(mode),
+    GEMINI_API_KEY: JSON.stringify(env.GEMINI_API_KEY || ''),
+  },
+  'global': 'globalThis',
+},
     optimizeDeps: {
       include: [
         'react-syntax-highlighter',
