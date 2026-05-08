@@ -104,23 +104,42 @@ async function startServer() {
   // Trust proxy for secure cookies behind reverse proxy
   app.set('trust proxy', 1);
 
-  // Security Middlewares
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-        "img-src": ["'self'", "data:", "https:", "http:"],
-        "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", 
-               "https://cdn.jsdelivr.net", "blob:"],
-        "connect-src": ["'self'", "https://api.github.com", "https://www.googleapis.com", "https://oauth2.googleapis.com", "wss:", "ws:", "http:", "https:"],
-        "frame-ancestors": ["'self'", "https://*.asia-east1.run.app", "https://*.google.com", "https://*.aistudio.google.com"],
-      },
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "img-src": ["'self'", "data:", "https:", "http:"],
+      "script-src": [
+        "'self'", 
+        "'unsafe-inline'", 
+        "'unsafe-eval'",
+        "https://cdn.jsdelivr.net",
+        "https://apis.google.com",      // ✅ Add this
+        "https://*.googleapis.com",     // ✅ Add this
+        "https://*.gstatic.com",        // ✅ Add this
+        "blob:"
+      ],
+      "connect-src": [
+        "'self'", 
+        "https://api.github.com", 
+        "https://www.googleapis.com", 
+        "https://oauth2.googleapis.com",
+        "https://*.googleapis.com",     // ✅ Add this
+        "https://identitytoolkit.googleapis.com", // ✅ Add this
+        "wss:", "ws:", "http:", "https:"
+      ],
+      "frame-src": [                    // ✅ Add this entire block
+        "'self'",
+        "https://accounts.google.com",
+        "https://*.firebaseapp.com"
+      ],
     },
-    frameguard: false,
-    crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: false,
-  }));
-
+  },
+  frameguard: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
+}));
+  
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // Limit each IP to 100 requests per windowMs
