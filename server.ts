@@ -99,7 +99,7 @@ async function startServer() {
       methods: ["GET", "POST"]
     }
   });
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
   // Trust proxy for secure cookies behind reverse proxy
   app.set('trust proxy', 1);
@@ -110,7 +110,8 @@ async function startServer() {
       directives: {
         ...helmet.contentSecurityPolicy.getDefaultDirectives(),
         "img-src": ["'self'", "data:", "https:", "http:"],
-        "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.jsdelivr.net"],
+        "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", 
+               "https://cdn.jsdelivr.net", "blob:"],
         "connect-src": ["'self'", "https://api.github.com", "https://www.googleapis.com", "https://oauth2.googleapis.com", "wss:", "ws:", "http:", "https:"],
         "frame-ancestors": ["'self'", "https://*.asia-east1.run.app", "https://*.google.com", "https://*.aistudio.google.com"],
       },
@@ -146,12 +147,12 @@ async function startServer() {
     secret: process.env.SESSION_SECRET || 'nexus_forge_super_secret_2007',
     resave: false,
     saveUninitialized: false,
-    cookie: {
-      secure: true,
-      sameSite: 'none',
-      httpOnly: true,
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
+   cookie: {
+  secure: process.env.NODE_ENV === 'production',  // only secure in prod
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  httpOnly: true,
+  maxAge: 24 * 60 * 60 * 1000
+}
   }));
 
   // Auth Routes
@@ -584,9 +585,9 @@ async function startServer() {
     }
   }
 
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+ httpServer.listen(Number(PORT), "0.0.0.0", () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
 }
 
 startServer().catch(err => {
