@@ -529,11 +529,6 @@ function App() {
       setSelectedRepo(null);
     }
   }, [githubToken, fetchRepos]);
-
-  // Firebase Auth Listener
-// Firebase Auth Listener
-useEffect(() => {
-  // First set up the auth state listener
  // Firebase Auth Listener
 useEffect(() => {
   const unsubscribe = onAuthStateChanged(auth, (user) => {
