@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, onSnapshot, Timestamp, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -15,17 +15,7 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Helper for Google Sign-in
 export const signInWithGoogle = async () => {
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
-  } catch (error: any) {
-    if (error.code === 'auth/popup-closed-by-user') {
-      console.log("Sign-in popup closed by user.");
-      return null;
-    }
-    console.error("Error signing in with Google:", error);
-    throw error;
-  }
+  await signInWithRedirect(auth, googleProvider);
 };
 
 // Helper for Sign-out
