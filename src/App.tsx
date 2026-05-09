@@ -114,7 +114,7 @@ import {
   deleteDoc, 
   updateDoc 
 } from 'firebase/firestore';
-import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import { User as FirebaseUser, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, errorInfo: string | null }> {
