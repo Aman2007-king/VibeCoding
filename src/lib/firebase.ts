@@ -5,7 +5,8 @@ import {
   signInWithRedirect, 
   getRedirectResult,
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged ,
+  browserLocalPersistence, setPersistence
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -28,6 +29,9 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Auth
 export const auth = getAuth(app);
+
+setPersistence(auth, browserLocalPersistence);
+
 export const googleProvider = new GoogleAuthProvider();
 
 // Initialize Firestore
