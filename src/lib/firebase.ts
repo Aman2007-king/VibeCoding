@@ -1,21 +1,13 @@
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, 
-  GoogleAuthProvider, 
-  signInWithRedirect, 
-  getRedirectResult, 
-  signOut, 
-  onAuthStateChanged,
-  browserLocalPersistence,
-  setPersistence
+  getAuth, GoogleAuthProvider, signInWithPopup,
+  signOut, onAuthStateChanged,
+  browserLocalPersistence, setPersistence
 } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, onSnapshot, Timestamp, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Set persistence immediately after getting auth
 setPersistence(auth, browserLocalPersistence)
   .then(() => console.log("Firebase persistence set to LOCAL"))
   .catch((err) => console.error("Persistence error:", err));
@@ -23,22 +15,14 @@ setPersistence(auth, browserLocalPersistence)
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Helper for Google Sign-in (redirect)
+// ✅ Back to popup - more reliable than redirect
 export const signInWithGoogle = async () => {
-  await signInWithRedirect(auth, googleProvider);
-};
-
-// ✅ Handle redirect result after Google login
-export const handleGoogleRedirectResult = async () => {
   try {
-    const result = await getRedirectResult(auth);
-    if (result?.user) {
-      console.log("Google sign-in successful:", result.user.displayName);
-      return result.user;
-    }
-    return null;
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
   } catch (error: any) {
-    console.error("Redirect result error:", error);
+    if (error.code === 'auth/popup-closed-by-user') return null;
+    console.error("Error signing in:", error);
     throw error;
   }
 };
