@@ -1,21 +1,48 @@
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, GoogleAuthProvider, signInWithPopup,
-  signOut, onAuthStateChanged,
-  browserLocalPersistence, setPersistence
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup,
+  signOut, 
+  onAuthStateChanged,
+  browserLocalPersistence, 
+  setPersistence
 } from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  Timestamp, 
+  getDocFromServer 
+} from 'firebase/firestore';
 
+// ✅ Make sure this import is here and path is correct
+import firebaseConfig from '../../firebase-applet-config.json';
+
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Initialize Auth
 export const auth = getAuth(app);
 
+// Set persistence
 setPersistence(auth, browserLocalPersistence)
   .then(() => console.log("Firebase persistence set to LOCAL"))
   .catch((err) => console.error("Persistence error:", err));
 
 export const googleProvider = new GoogleAuthProvider();
+
+// Initialize Firestore
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// ✅ Back to popup - more reliable than redirect
+// Helper for Google Sign-in (popup)
 export const signInWithGoogle = async () => {
   try {
     const result = await signInWithPopup(auth, googleProvider);
@@ -26,7 +53,6 @@ export const signInWithGoogle = async () => {
     throw error;
   }
 };
-
 // Helper for Sign-out
 export const logOut = async () => {
   try {
