@@ -50,17 +50,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     y.set(0);
   };
 
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    try {
-      await signInWithGoogle();
-      if (onLoginSuccess) onLoginSuccess();
-    } catch (error) {
-      console.error("Login failed:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+ const handleGoogleLogin = () => {
+  setIsLoading(true);
+  signInWithGoogle(); // No await - page will redirect immediately
+};
 
   return (
     <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 overflow-hidden relative">
