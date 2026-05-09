@@ -534,6 +534,8 @@ function App() {
 // Firebase Auth Listener
 useEffect(() => {
   // First set up the auth state listener
+ // Firebase Auth Listener
+useEffect(() => {
   const unsubscribe = onAuthStateChanged(auth, (user) => {
     setCurrentUser(user);
     setIsAuthReady(true);
@@ -546,13 +548,12 @@ useEffect(() => {
         photoURL: user.photoURL,
         lastLoginAt: Timestamp.now(),
         role: 'user'
-      }, { merge: true }).catch(err => 
+      }, { merge: true }).catch(err =>
         handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`)
       );
     }
   });
 
-  // Then handle redirect result
   getRedirectResult(auth)
     .then((result) => {
       if (result?.user) {
