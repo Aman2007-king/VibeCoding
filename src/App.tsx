@@ -98,7 +98,8 @@ import {
   logOut, 
   db, 
   handleFirestoreError, 
-  OperationType 
+  OperationType,
+  handleGoogleRedirectResult  // ✅ Add this
 } from './lib/firebase';
 import { 
   onSnapshot, 
@@ -542,24 +543,41 @@ function App() {
     console.error("Redirect error:", error);
     showToast("Sign in failed", "error");
   });
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setIsAuthReady(true);
+  // ✅ New code
+useEffect(() => {
+  // Handle Google redirect result on page load
+  handleGoogleRedirectResult()
+    .then((user) => {
       if (user) {
-        // Sync user profile to Firestore
-        const userRef = doc(db, 'users', user.uid);
-        setDoc(userRef, {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
-          lastLoginAt: Timestamp.now(),
-          role: 'user' // Default role
-        }, { merge: true }).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`));
+        showToast("Signed in successfully!", "success");
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       }
+    })
+    .catch((error) => {
+      showToast("Sign in failed: " + error.message, "error");
     });
-    return () => unsubscribe();
-  }, []);
+
+  // Auth state listener
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    setCurrentUser(user);
+    setIsAuthReady(true);
+    if (user) {
+      const userRef = doc(db, 'users', user.uid);
+      setDoc(userRef, {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        lastLoginAt: Timestamp.now(),
+        role: 'user'
+      }, { merge: true }).catch(err => 
+        handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`)
+      );
+    }
+  });
+
+  return () => unsubscribe();
+}, []);
 
   // Firestore Sync: Projects
   useEffect(() => {
