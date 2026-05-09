@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, memo, Suspens
 const Editor = lazy(() => import('@monaco-editor/react'));
 import { io, Socket } from 'socket.io-client';
 import { loader } from '@monaco-editor/react';
+// Add getRedirectResult to the firebase/auth import
+import { User as FirebaseUser, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { 
   Play, 
   Bug, 
