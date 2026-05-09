@@ -110,28 +110,29 @@ app.use(helmet({
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
       "img-src": ["'self'", "data:", "https:", "http:"],
       "script-src": [
-        "'self'", 
-        "'unsafe-inline'", 
+        "'self'",
+        "'unsafe-inline'",
         "'unsafe-eval'",
         "https://cdn.jsdelivr.net",
-        "https://apis.google.com",      // ✅ Add this
-        "https://*.googleapis.com",     // ✅ Add this
-        "https://*.gstatic.com",        // ✅ Add this
+        "https://apis.google.com",
+        "https://*.googleapis.com",
+        "https://*.gstatic.com",
         "blob:"
       ],
       "connect-src": [
-        "'self'", 
-        "https://api.github.com", 
-        "https://www.googleapis.com", 
-        "https://oauth2.googleapis.com",
-        "https://*.googleapis.com",     // ✅ Add this
-        "https://identitytoolkit.googleapis.com", // ✅ Add this
+        "'self'",
+        "https://api.github.com",
+        "https://*.googleapis.com",
+        "https://*.firebaseio.com",
+        "https://identitytoolkit.googleapis.com",
+        "https://securetoken.googleapis.com",
         "wss:", "ws:", "http:", "https:"
       ],
-      "frame-src": [                    // ✅ Add this entire block
+      "frame-src": [
         "'self'",
         "https://accounts.google.com",
-        "https://*.firebaseapp.com"
+        "https://*.firebaseapp.com",
+        "https://vibes-coders.firebaseapp.com"
       ],
     },
   },
