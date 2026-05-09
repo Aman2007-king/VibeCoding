@@ -532,6 +532,16 @@ function App() {
 
   // Firebase Auth Listener
   useEffect(() => {
+    // ✅ Add this - handle redirect result
+  getRedirectResult(auth).then((result) => {
+    if (result?.user) {
+      showToast("Signed in successfully!", "success");
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    }
+  }).catch((error) => {
+    console.error("Redirect error:", error);
+    showToast("Sign in failed", "error");
+  });
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setIsAuthReady(true);
@@ -592,15 +602,10 @@ function App() {
     return () => unsubscribe();
   }, [currentUser]);
 
-  const handleSignIn = async () => {
-    try {
-      await signInWithGoogle();
-      showToast("Signed in successfully!", "success");
-    } catch (error) {
-      showToast("Sign in failed", "error");
-    }
-  };
-
+ // ✅ Fixed code
+const handleSignIn = () => {
+  signInWithGoogle(); // No await - redirect happens immediately
+};
   const handleSignOut = async () => {
     try {
       await logOut();
