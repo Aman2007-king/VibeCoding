@@ -558,6 +558,22 @@ useEffect(() => {
     });
 
   // Auth state listener
+ 
+useEffect(() => {
+  // ✅ Handle Google redirect result first
+  handleGoogleRedirectResult()
+    .then((user) => {
+      if (user) {
+        showToast("Signed in successfully!", "success");
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      }
+    })
+    .catch((error) => {
+      console.error("Redirect error:", error);
+      showToast("Sign in failed: " + error.message, "error");
+    });
+
+  // Existing auth state listener
   const unsubscribe = onAuthStateChanged(auth, (user) => {
     setCurrentUser(user);
     setIsAuthReady(true);
@@ -575,10 +591,8 @@ useEffect(() => {
       );
     }
   });
-
   return () => unsubscribe();
 }, []);
-
   // Firestore Sync: Projects
   useEffect(() => {
     if (!currentUser) return;
