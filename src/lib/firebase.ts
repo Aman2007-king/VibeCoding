@@ -1,6 +1,26 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, onSnapshot, Timestamp, getDocFromServer } from 'firebase/firestore';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithRedirect, 
+  getRedirectResult,
+  signOut, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  collection, 
+  query, 
+  where, 
+  onSnapshot, 
+  Timestamp, 
+  getDocFromServer 
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -10,12 +30,27 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Initialize Firestore with the named database
+// Initialize Firestore
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Helper for Google Sign-in
+// Helper for Google Sign-in (redirect)
 export const signInWithGoogle = async () => {
   await signInWithRedirect(auth, googleProvider);
+};
+
+// ✅ Handle redirect result after Google login
+export const handleGoogleRedirectResult = async () => {
+  try {
+    const result = await getRedirectResult(auth);
+    if (result?.user) {
+      console.log("Google sign-in successful:", result.user.displayName);
+      return result.user;
+    }
+    return null;
+  } catch (error: any) {
+    console.error("Redirect result error:", error);
+    throw error;
+  }
 };
 
 // Helper for Sign-out
@@ -85,7 +120,7 @@ export async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
       console.error("Please check your Firebase configuration. The client is offline.");
     }
   }
