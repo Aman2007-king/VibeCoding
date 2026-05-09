@@ -50,9 +50,14 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     y.set(0);
   };
 
- const handleGoogleLogin = () => {
+const handleGoogleLogin = async () => {
   setIsLoading(true);
-  signInWithGoogle(); // No await - page will redirect immediately
+  try {
+    await signInWithGoogle();
+  } catch (error) {
+    console.error("Login failed:", error);
+    setIsLoading(false);
+  }
 };
 
   return (
