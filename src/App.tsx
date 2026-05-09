@@ -101,7 +101,6 @@ import {
   db, 
   handleFirestoreError, 
   OperationType,
-  handleGoogleRedirectResult  // ✅ Add this
 } from './lib/firebase';
 import { 
   onSnapshot, 
@@ -532,48 +531,19 @@ function App() {
   }, [githubToken, fetchRepos]);
 
   // Firebase Auth Listener
-  useEffect(() => {
-    // ✅ Add this - handle redirect result
-  getRedirectResult(auth).then((result) => {
-    if (result?.user) {
-      showToast("Signed in successfully!", "success");
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-    }
-  }).catch((error) => {
-    console.error("Redirect error:", error);
-    showToast("Sign in failed", "error");
-  });
-  // ✅ New code
+// Firebase Auth Listener
 useEffect(() => {
-  // Handle Google redirect result on page load
-  handleGoogleRedirectResult()
-    .then((user) => {
-      if (user) {
-        showToast("Signed in successfully!", "success");
-        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-      }
-    })
-    .catch((error) => {
-      showToast("Sign in failed: " + error.message, "error");
-    });
-
-  // Auth state listener
- 
-useEffect(() => {
-  // ✅ Handle Google redirect result first
-  handleGoogleRedirectResult()
-    .then((user) => {
-      if (user) {
+  getRedirectResult(auth)
+    .then((result) => {
+      if (result?.user) {
         showToast("Signed in successfully!", "success");
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       }
     })
     .catch((error) => {
       console.error("Redirect error:", error);
-      showToast("Sign in failed: " + error.message, "error");
     });
 
-  // Existing auth state listener
   const unsubscribe = onAuthStateChanged(auth, (user) => {
     setCurrentUser(user);
     setIsAuthReady(true);
