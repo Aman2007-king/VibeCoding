@@ -126,6 +126,8 @@ app.use(helmet({
         "https://*.firebaseio.com",
         "https://identitytoolkit.googleapis.com",
         "https://securetoken.googleapis.com",
+        "https://*.firebase.com",        // ✅ Add this
+        "https://firebase.googleapis.com", // ✅ Add this
         "wss:", "ws:", "http:", "https:"
       ],
       "frame-src": [
