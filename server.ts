@@ -110,9 +110,7 @@ app.use(helmet({
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
       "img-src": ["'self'", "data:", "https:", "http:"],
       "script-src": [
-        "'self'",
-        "'unsafe-inline'",
-        "'unsafe-eval'",
+        "'self'", "'unsafe-inline'", "'unsafe-eval'",
         "https://cdn.jsdelivr.net",
         "https://apis.google.com",
         "https://*.googleapis.com",
@@ -124,10 +122,10 @@ app.use(helmet({
         "https://api.github.com",
         "https://*.googleapis.com",
         "https://*.firebaseio.com",
+        "https://firestore.googleapis.com",
         "https://identitytoolkit.googleapis.com",
         "https://securetoken.googleapis.com",
-        "https://*.firebase.com",        // ✅ Add this
-        "https://firebase.googleapis.com", // ✅ Add this
+        "https://firebase.googleapis.com",
         "wss:", "ws:", "http:", "https:"
       ],
       "frame-src": [
