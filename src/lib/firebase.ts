@@ -3,38 +3,24 @@ import {
   getAuth, 
   GoogleAuthProvider, 
   signInWithRedirect, 
-  getRedirectResult,
+  getRedirectResult, 
   signOut, 
-  onAuthStateChanged ,
-  browserLocalPersistence, setPersistence
+  onAuthStateChanged,
+  browserLocalPersistence,
+  setPersistence
 } from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  Timestamp, 
-  getDocFromServer 
-} from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, onSnapshot, Timestamp, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-
-// Initialize Auth
 export const auth = getAuth(app);
 
-setPersistence(auth, browserLocalPersistence);
+// Set persistence immediately after getting auth
+setPersistence(auth, browserLocalPersistence)
+  .then(() => console.log("Firebase persistence set to LOCAL"))
+  .catch((err) => console.error("Persistence error:", err));
 
 export const googleProvider = new GoogleAuthProvider();
-
-// Initialize Firestore
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Helper for Google Sign-in (redirect)
