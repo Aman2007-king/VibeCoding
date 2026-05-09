@@ -548,18 +548,6 @@ useEffect(() => {
       );
     }
   });
-
-  getRedirectResult(auth)
-    .then((result) => {
-      if (result?.user) {
-        showToast("Signed in successfully!", "success");
-        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-      }
-    })
-    .catch((error) => {
-      console.error("Redirect error:", error);
-    });
-
   return () => unsubscribe();
 }, []);
   // Firestore Sync: Projects
