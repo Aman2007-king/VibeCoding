@@ -134,6 +134,7 @@ app.use(helmet({
         "https://*.firebaseapp.com",
         "https://vibes-coders.firebaseapp.com"
       ],
+      "form-action": ["'self'", "https://accounts.google.com"],
     },
   },
   frameguard: false,
