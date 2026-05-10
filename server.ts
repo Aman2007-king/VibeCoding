@@ -103,7 +103,13 @@ async function startServer() {
 
   // Trust proxy for secure cookies behind reverse proxy
   app.set('trust proxy', 1);
-
+// MUST be before helmet
+app.use((req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  next();
+});
+  
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
