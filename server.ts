@@ -104,13 +104,18 @@ async function startServer() {
   // Trust proxy for secure cookies behind reverse proxy
   app.set('trust proxy', 1);
 // MUST be before helmet
+// Set COOP header BEFORE helmet
 app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
   next();
 });
-  
+
+// Then helmet with COOP disabled so it doesn't override
 app.use(helmet({
+  crossOriginOpenerPolicy: false,        // ✅ Don't let helmet set COOP
+  crossOriginEmbedderPolicy: false,      // ✅ Don't let helmet set COEP
+  crossOriginResourcePolicy: false,
   contentSecurityPolicy: {
     directives: {
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
@@ -140,12 +145,10 @@ app.use(helmet({
         "https://*.firebaseapp.com",
         "https://vibes-coders.firebaseapp.com"
       ],
-      "form-action": ["'self'", "https://accounts.google.com"],
     },
   },
   frameguard: false,
-  crossOriginEmbedderPolicy: false,
-  crossOriginResourcePolicy: false,
+  referrerPolicy: { policy: "no-referrer-when-downgrade" },
 }));
   
   const limiter = rateLimit({
