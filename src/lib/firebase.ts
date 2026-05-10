@@ -1,17 +1,18 @@
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, 
+  initializeAuth,
   GoogleAuthProvider, 
   signInWithPopup,
   signOut, 
   onAuthStateChanged,
-  browserLocalPersistence, 
-  setPersistence
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserPopupRedirectResolver
 } from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
-  getDoc, 
+  getDoc,
   setDoc, 
   updateDoc, 
   deleteDoc, 
@@ -22,30 +23,23 @@ import {
   Timestamp, 
   getDocFromServer 
 } from 'firebase/firestore';
-
-// ✅ Make sure this import is here and path is correct
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Auth
-export const auth = getAuth(app);
-
-// Set persistence
-setPersistence(auth, browserLocalPersistence)
-  .then(() => console.log("Firebase persistence set to LOCAL"))
-  .catch((err) => console.error("Persistence error:", err));
+// ✅ Use initializeAuth with explicit persistence
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+  popupRedirectResolver: browserPopupRedirectResolver,
+});
 
 export const googleProvider = new GoogleAuthProvider();
-
-// Initialize Firestore
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Helper for Google Sign-in (popup)
 export const signInWithGoogle = async () => {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
+    const result = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
     return result.user;
   } catch (error: any) {
     if (error.code === 'auth/popup-closed-by-user') return null;
@@ -53,7 +47,7 @@ export const signInWithGoogle = async () => {
     throw error;
   }
 };
-// Helper for Sign-out
+
 export const logOut = async () => {
   try {
     await signOut(auth);
@@ -63,7 +57,6 @@ export const logOut = async () => {
   }
 };
 
-// Error handling helper for Firestore
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -115,7 +108,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test connection to Firestore
 export async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
