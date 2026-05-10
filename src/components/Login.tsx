@@ -53,8 +53,13 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 const handleGoogleLogin = async () => {
   setIsLoading(true);
   try {
-    await signInWithGoogle();
-  } catch (error) {
+    const user = await signInWithGoogle();
+    if (!user) {
+      // Popup was closed or blocked
+      setIsLoading(false);
+    }
+    // If user exists, onAuthStateChanged will handle it
+  } catch (error: any) {
     console.error("Login failed:", error);
     setIsLoading(false);
   }
