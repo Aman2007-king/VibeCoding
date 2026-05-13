@@ -200,91 +200,112 @@ app.use(helmet({
     });
   });
 
-  // GitHub OAuth
-  app.get("/api/auth/github/url", (req, res) => {
-    if (!process.env.GITHUB_CLIENT_ID) {
-      return res.status(500).json({ error: "GITHUB_CLIENT_ID is not configured in environment variables" });
-    }
-    let origin = req.query.origin as string;
-    if (!origin) return res.status(400).json({ error: "Origin is required" });
-    
-    // Normalize origin: remove trailing slash
-    origin = origin.replace(/\/$/, "");
+// GitHub OAuth
+app.get("/api/auth/github/url", (req, res) => {
+  if (!process.env.GITHUB_CLIENT_ID) {
+    return res.status(500).json({ error: "GITHUB_CLIENT_ID is not configured" });
+  }
 
-    (req.session as any).authOrigin = origin;
-    const redirectUri = `${origin}/api/auth/github/callback`;
-    const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo%20user:email`;
-    res.json({ url });
-  });
+  const origin = (req.query.origin as string)?.replace(/\/$/, "");
+  if (!origin) return res.status(400).json({ error: "Origin is required" });
 
-  app.get("/api/auth/github/callback", async (req, res) => {
-    const { code } = req.query;
-    const origin = (req.session as any).authOrigin;
-    
-    if (!code) return res.status(400).send("Code is required");
-    if (!origin) return res.status(400).send("Session expired, please try again");
+  const redirectUri = process.env.GITHUB_REDIRECT_URI;
+  if (!redirectUri) {
+    return res.status(500).json({ error: "GITHUB_REDIRECT_URI is not configured" });
+  }
 
-    try {
-      const tokenResponse = await axios.post("https://github.com/login/oauth/access_token", {
+  // ✅ Pass origin via state instead of session
+  const state = Buffer.from(origin).toString('base64');
+  const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo%20user:email&state=${state}`;
+  res.json({ url });
+});
+
+app.get("/api/auth/github/callback", async (req, res) => {
+  const { code, state } = req.query;
+
+  // ✅ Recover origin from state param
+  const origin = state
+    ? Buffer.from(state as string, 'base64').toString('utf8')
+    : null;
+
+  if (!code) return res.status(400).send("Code is required");
+  if (!origin) return res.status(400).send("Invalid state parameter");
+
+  try {
+    const tokenResponse = await axios.post(
+      "https://github.com/login/oauth/access_token",
+      {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: `${origin}/api/auth/github/callback`
-      }, {
-        headers: { Accept: "application/json" }
+        redirect_uri: process.env.GITHUB_REDIRECT_URI, // ✅ fixed URI
+      },
+      { headers: { Accept: "application/json" } }
+    );
+
+    const accessToken = tokenResponse.data.access_token;
+    if (!accessToken) throw new Error("No access token returned");
+
+    const userResponse = await axios.get("https://api.github.com/user", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const githubUser = userResponse.data;
+
+    // Get email if not public
+    let email = githubUser.email;
+    if (!email) {
+      const emailsResponse = await axios.get("https://api.github.com/user/emails", {
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
-
-      const accessToken = tokenResponse.data.access_token;
-      const userResponse = await axios.get("https://api.github.com/user", {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-
-      const githubUser = userResponse.data;
-      
-      // Get email if not public
-      let email = githubUser.email;
-      if (!email) {
-        const emailsResponse = await axios.get("https://api.github.com/user/emails", {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        email = emailsResponse.data.find((e: any) => e.primary && e.verified)?.email || emailsResponse.data[0].email;
-      }
-
-      const user = {
-        id: `github:${githubUser.id}`,
-        name: githubUser.name || githubUser.login,
-        email: email,
-        avatar_url: githubUser.avatar_url,
-        provider: 'github',
-        accessToken: accessToken
-      };
-
-      db.prepare(`
-        INSERT INTO users (id, name, email, avatar_url, provider)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          name = excluded.name,
-          email = excluded.email,
-          avatar_url = excluded.avatar_url
-      `).run(user.id, user.name, user.email, user.avatar_url, user.provider);
-
-      (req.session as any).user = user;
-
-      res.send(`
-        <html>
-          <body>
-            <script>
-              window.opener.postMessage({ type: 'AUTH_SUCCESS', user: ${JSON.stringify(user)} }, '*');
-              window.close();
-            </script>
-          </body>
-        </html>
-      `);
-    } catch (err: any) {
-      console.error("GitHub Auth Error:", err.response?.data || err.message);
-      res.status(500).send(`Authentication failed. Redirect URI: ${origin}/api/auth/github/callback`);
+      email =
+        emailsResponse.data.find((e: any) => e.primary && e.verified)?.email ||
+        emailsResponse.data[0]?.email;
     }
-  });
+
+    const user = {
+      id: `github:${githubUser.id}`,
+      name: githubUser.name || githubUser.login,
+      email,
+      avatar_url: githubUser.avatar_url,
+      provider: "github",
+      accessToken,
+    };
+
+    db.prepare(`
+      INSERT INTO users (id, name, email, avatar_url, provider)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        email = excluded.email,
+        avatar_url = excluded.avatar_url
+    `).run(user.id, user.name, user.email, user.avatar_url, user.provider);
+
+    (req.session as any).user = user;
+
+    // ✅ Target specific origin in postMessage
+    res.send(`
+      <html><body><script>
+        window.opener.postMessage(
+          { type: 'AUTH_SUCCESS', user: ${JSON.stringify(user)} },
+          '${origin}'
+        );
+        window.close();
+      </script></body></html>
+    `);
+  } catch (err: any) {
+    console.error("GitHub Auth Error:", err.response?.data || err.message);
+    res.send(`
+      <html><body><script>
+        window.opener.postMessage(
+          { type: 'AUTH_ERROR', error: 'Authentication failed' },
+          '${origin}'
+        );
+        window.close();
+      </script></body></html>
+    `);
+  }
+});
+   
 
   // Google OAuth
   app.get("/api/auth/google/url", (req, res) => {
