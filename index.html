@@ -3,11 +3,72 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <title>VibeCoding — AI IDE</title>
+    <style>
+      #initial-loader {
+        position: fixed; inset: 0;
+        background: #050505;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        gap: 24px; z-index: 9999;
+        transition: opacity 0.5s ease;
+      }
+      #initial-loader.hidden { opacity: 0; pointer-events: none; }
+      .loader-logo {
+        width: 64px; height: 64px;
+        background: #10b981; border-radius: 16px;
+        display: flex; align-items: center; justify-content: center;
+        animation: bounce 1s ease-in-out infinite;
+      }
+      .loader-bar {
+        width: 200px; height: 3px;
+        background: #1a1a1a; border-radius: 99px; overflow: hidden;
+      }
+      .loader-bar-fill {
+        height: 100%; background: #10b981; border-radius: 99px;
+        animation: load 3s ease-in-out forwards;
+      }
+      .loader-text {
+        color: #a1a1aa; font-family: system-ui;
+        font-size: 11px; letter-spacing: 0.3em;
+        text-transform: uppercase;
+      }
+      @keyframes bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-8px); }
+      }
+      @keyframes load {
+        0% { width: 0%; }
+        60% { width: 70%; }
+        100% { width: 95%; }
+      }
+    </style>
   </head>
   <body>
+    <!-- Loading Screen -->
+    <div id="initial-loader">
+      <div class="loader-logo">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+        </svg>
+      </div>
+      <div class="loader-bar"><div class="loader-bar-fill"></div></div>
+      <div class="loader-text">Initializing VibeCoding</div>
+    </div>
+
+    <!-- React Root -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Hide loader once React mounts -->
+    <script>
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const loader = document.getElementById('initial-loader');
+          if (loader) loader.classList.add('hidden');
+          setTimeout(() => loader?.remove(), 500);
+        }, 1000);
+      });
+    </script>
   </body>
 </html>
-
