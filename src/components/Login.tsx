@@ -1,114 +1,64 @@
 import React, { useState } from 'react';
-import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
-  LogIn, 
-  Github, 
-  Chrome, 
-  Sparkles, 
-  ShieldCheck, 
-  Zap, 
-  Globe, 
-  ArrowRight,
-  Code2,
-  Cpu,
-  Layers,
-  Rocket
+  Github, Chrome, Sparkles, ShieldCheck, Zap, Globe, 
+  ArrowRight, Code2, Cpu, Layers, Rocket
 } from 'lucide-react';
 import { signInWithGoogle } from '../lib/firebase';
 
-interface LoginProps {
-  onLoginSuccess?: () => void;
-}
+export default function Login() {
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isGithubLoading, setIsGithubLoading] = useState(false);
 
-export default function Login({ onLoginSuccess }: LoginProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  
-  // 3D Card Effect
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-  const mouseXSpring = useSpring(x);
-  const mouseYSpring = useSpring(y);
-  const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["17.5deg", "-17.5deg"]);
-  const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-17.5deg", "17.5deg"]);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const xPct = (e.clientX - rect.left) / rect.width - 0.5;
-    const yPct = (e.clientY - rect.top) / rect.height - 0.5;
-    x.set(xPct);
-    y.set(yPct);
+  const handleGoogleLogin = () => {
+    setIsGoogleLoading(true);
+    signInWithGoogle();
+    setTimeout(() => setIsGoogleLoading(false), 10000);
   };
 
-  const handleMouseLeave = () => {
-    x.set(0);
-    y.set(0);
-  };
-
-  // ✅ Moved OUTSIDE the JSX return
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    try {
-      const user = await signInWithGoogle();
-      if (!user) {
-        setIsLoading(false);
-      }
-    } catch (error: any) {
-      console.error("Login failed:", error);
-      setIsLoading(false);
-    }
-  };
-
-  // ✅ Moved OUTSIDE the JSX return
   const handleGithubLogin = async () => {
-    setIsLoading(true);
+    setIsGithubLoading(true);
     try {
       const response = await fetch(
         `/api/auth/github/url?origin=${encodeURIComponent(window.location.origin)}`
       );
       const { url } = await response.json();
       const popup = window.open(url, 'github_oauth', 'width=600,height=700');
-
       const handler = (event: MessageEvent) => {
         if (event.data?.type === 'AUTH_SUCCESS') {
           window.removeEventListener('message', handler);
           popup?.close();
-          setIsLoading(false);
+          setIsGithubLoading(false);
         }
       };
       window.addEventListener('message', handler);
-
       setTimeout(() => {
         window.removeEventListener('message', handler);
-        setIsLoading(false);
+        setIsGithubLoading(false);
       }, 120000);
     } catch (error) {
       console.error("GitHub login failed:", error);
-      setIsLoading(false);
+      setIsGithubLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 overflow-hidden relative">
-      {/* Animated Background */}
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center p-4 sm:p-6 overflow-hidden relative">
+      {/* Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-accent/20 blur-[120px] rounded-full animate-pulse" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 blur-[120px] rounded-full animate-pulse delay-700" />
-        <div 
-          className="absolute inset-0 opacity-[0.03]" 
-          style={{ 
-            backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)',
-            backgroundSize: '40px 40px' 
-          }} 
-        />
+        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '40px 40px' }} />
       </div>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center relative z-10">
-        {/* Left Side */}
+      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center relative z-10">
+        
+        {/* Left Side - Hidden on mobile, shown on desktop */}
         <motion.div 
           initial={{ opacity: 0, x: -50 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-          className="space-y-8"
+          transition={{ duration: 0.8 }}
+          className="hidden lg:block space-y-8"
         >
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-accent rounded-2xl flex items-center justify-center shadow-lg shadow-accent/20">
@@ -129,10 +79,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
           <div className="grid grid-cols-2 gap-4">
             {[
-              { icon: Zap,        label: "Lightning Fast",   desc: "Sub-second deployments" },
+              { icon: Zap, label: "Lightning Fast", desc: "Sub-second deployments" },
               { icon: ShieldCheck, label: "Enterprise Grade", desc: "Bank-level security" },
-              { icon: Globe,      label: "Global Edge",      desc: "14+ edge locations" },
-              { icon: Cpu,        label: "AI Powered",       desc: "Intelligent code gen" }
+              { icon: Globe, label: "Global Edge", desc: "14+ edge locations" },
+              { icon: Cpu, label: "AI Powered", desc: "Intelligent code gen" }
             ].map((feature, i) => (
               <div key={i} className="p-4 bg-white/5 border border-white/10 rounded-2xl space-y-2 hover:bg-white/10 transition-colors group">
                 <feature.icon className="w-5 h-5 text-accent group-hover:scale-110 transition-transform" />
@@ -143,60 +93,69 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           </div>
         </motion.div>
 
-        {/* Right Side: 3D Login Card */}
+        {/* Right Side - Login Card */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
+          initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={handleMouseLeave}
-          style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
-          className="relative group"
+          transition={{ duration: 0.6, delay: 0.1 }}
+          className="w-full"
         >
-          <div className="absolute -inset-1 bg-gradient-to-r from-accent to-purple-600 rounded-[2.5rem] blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200" />
-          
-          <div 
-            style={{ transform: "translateZ(75px)" }}
-            className="relative bg-[#0D0D0E] border border-white/10 rounded-[2.5rem] p-10 lg:p-16 shadow-2xl space-y-10"
-          >
+          {/* Mobile Logo - Only on small screens */}
+          <div className="flex lg:hidden items-center justify-center gap-3 mb-8">
+            <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center">
+              <Code2 className="w-6 h-6 text-white" />
+            </div>
+            <span className="text-xl font-black tracking-tighter uppercase text-white">Nexus Forge</span>
+          </div>
+
+          <div className="bg-[#0D0D0E] border border-white/10 rounded-[2rem] p-6 sm:p-8 lg:p-10 shadow-2xl space-y-6 sm:space-y-8">
             <div className="space-y-2">
-              <h2 className="text-3xl font-black tracking-tight text-white uppercase">Welcome Back.</h2>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white uppercase">Welcome Back.</h2>
               <p className="text-sm text-text-secondary opacity-60">Sign in to access your workspace and projects.</p>
             </div>
 
-            {/* ✅ Both buttons correctly inside this div */}
-            <div className="space-y-4">
+            {/* Mobile features grid - Only on small screens */}
+            <div className="grid grid-cols-2 gap-3 lg:hidden">
+              {[
+                { icon: Zap, label: "Lightning Fast" },
+                { icon: ShieldCheck, label: "Enterprise Grade" },
+                { icon: Globe, label: "Global Edge" },
+                { icon: Cpu, label: "AI Powered" }
+              ].map((f, i) => (
+                <div key={i} className="p-3 bg-white/5 border border-white/10 rounded-xl flex items-center gap-2">
+                  <f.icon className="w-4 h-4 text-accent flex-shrink-0" />
+                  <span className="text-[10px] font-bold text-white uppercase tracking-tight">{f.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3">
+              {/* Google Button */}
               <button 
                 onClick={handleGoogleLogin}
-                disabled={isLoading}
-                className="w-full bg-white text-black h-14 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-opacity-90 transition-all shadow-xl shadow-white/5 group disabled:opacity-50"
+                disabled={isGoogleLoading || isGithubLoading}
+                className="w-full bg-white text-black h-12 sm:h-14 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-opacity-90 transition-all shadow-xl group disabled:opacity-50 text-sm sm:text-base"
               >
-                {isLoading ? (
+                {isGoogleLoading ? (
                   <Sparkles className="w-5 h-5 animate-spin" />
                 ) : (
-                  <>
-                    <Chrome className="w-5 h-5" />
-                    Continue with Google
-                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </>
+                  <><Chrome className="w-5 h-5" />Continue with Google</>
                 )}
+                {!isGoogleLoading && <ArrowRight className="w-4 h-4 ml-auto group-hover:translate-x-1 transition-transform" />}
               </button>
 
-              {/* ✅ GitHub button now properly placed here */}
+              {/* GitHub Button */}
               <button 
                 onClick={handleGithubLogin}
-                disabled={isLoading}
-                className="w-full bg-[#24292e] text-white h-14 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#2f363d] transition-all shadow-xl group disabled:opacity-50"
+                disabled={isGoogleLoading || isGithubLoading}
+                className="w-full bg-[#24292e] text-white h-12 sm:h-14 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#2f363d] transition-all shadow-xl group disabled:opacity-50 text-sm sm:text-base border border-white/10"
               >
-                {isLoading ? (
+                {isGithubLoading ? (
                   <Sparkles className="w-5 h-5 animate-spin" />
                 ) : (
-                  <>
-                    <Github className="w-5 h-5" />
-                    Continue with GitHub
-                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </>
+                  <><Github className="w-5 h-5" />Continue with GitHub</>
                 )}
+                {!isGithubLoading && <ArrowRight className="w-4 h-4 ml-auto group-hover:translate-x-1 transition-transform" />}
               </button>
             </div>
 
@@ -209,37 +168,21 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               </div>
             </div>
 
-            <div className="flex items-center justify-center gap-8 opacity-20 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-500">
-              <Layers className="w-6 h-6" />
-              <Rocket className="w-6 h-6" />
-              <Globe className="w-6 h-6" />
-              <Zap className="w-6 h-6" />
+            <div className="flex items-center justify-center gap-6 sm:gap-8 opacity-20">
+              <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
+              <Rocket className="w-5 h-5 sm:w-6 sm:h-6" />
+              <Globe className="w-5 h-5 sm:w-6 sm:h-6" />
+              <Zap className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-
-            <motion.div 
-              style={{ transform: "translateZ(100px)" }}
-              className="absolute -top-6 -right-6 w-12 h-12 bg-accent rounded-xl flex items-center justify-center shadow-lg shadow-accent/20 hidden lg:flex"
-            >
-              <Sparkles className="w-6 h-6 text-white" />
-            </motion.div>
-            
-            <motion.div 
-              style={{ transform: "translateZ(50px)" }}
-              className="absolute -bottom-4 -left-4 p-3 bg-bg-secondary border border-white/10 rounded-xl shadow-xl hidden lg:block"
-            >
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[8px] font-black uppercase tracking-widest text-text-secondary">System Online</span>
-              </div>
-            </motion.div>
           </div>
         </motion.div>
       </div>
 
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-8 text-[10px] font-black uppercase tracking-[0.3em] text-text-secondary opacity-20">
+      {/* Footer */}
+      <div className="absolute bottom-4 sm:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 sm:gap-8 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] text-text-secondary opacity-20 whitespace-nowrap">
         <span>Privacy Policy</span>
         <span>Terms of Service</span>
-        <span>&copy; 2026 Nexus Forge</span>
+        <span>© 2026 Nexus Forge</span>
       </div>
     </div>
   );
