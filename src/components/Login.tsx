@@ -26,21 +26,15 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   // 3D Card Effect
   const x = useMotionValue(0);
   const y = useMotionValue(0);
-
   const mouseXSpring = useSpring(x);
   const mouseYSpring = useSpring(y);
-
   const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["17.5deg", "-17.5deg"]);
   const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-17.5deg", "17.5deg"]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const xPct = mouseX / width - 0.5;
-    const yPct = mouseY / height - 0.5;
+    const xPct = (e.clientX - rect.left) / rect.width - 0.5;
+    const yPct = (e.clientY - rect.top) / rect.height - 0.5;
     x.set(xPct);
     y.set(yPct);
   };
@@ -50,29 +44,55 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     y.set(0);
   };
 
-const handleGoogleLogin = async () => {
-  setIsLoading(true);
-  try {
-    const user = await signInWithGoogle();
-    if (!user) {
-      // Popup was closed or blocked
+  // ✅ Moved OUTSIDE the JSX return
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const user = await signInWithGoogle();
+      if (!user) {
+        setIsLoading(false);
+      }
+    } catch (error: any) {
+      console.error("Login failed:", error);
       setIsLoading(false);
     }
-    // If user exists, onAuthStateChanged will handle it
-  } catch (error: any) {
-    console.error("Login failed:", error);
-    setIsLoading(false);
-  }
-};
+  };
+
+  // ✅ Moved OUTSIDE the JSX return
+  const handleGithubLogin = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(
+        `/api/auth/github/url?origin=${encodeURIComponent(window.location.origin)}`
+      );
+      const { url } = await response.json();
+      const popup = window.open(url, 'github_oauth', 'width=600,height=700');
+
+      const handler = (event: MessageEvent) => {
+        if (event.data?.type === 'AUTH_SUCCESS') {
+          window.removeEventListener('message', handler);
+          popup?.close();
+          setIsLoading(false);
+        }
+      };
+      window.addEventListener('message', handler);
+
+      setTimeout(() => {
+        window.removeEventListener('message', handler);
+        setIsLoading(false);
+      }, 120000);
+    } catch (error) {
+      console.error("GitHub login failed:", error);
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 overflow-hidden relative">
-      {/* Animated Background Elements */}
+      {/* Animated Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-accent/20 blur-[120px] rounded-full animate-pulse" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 blur-[120px] rounded-full animate-pulse delay-700" />
-        
-        {/* Grid Pattern */}
         <div 
           className="absolute inset-0 opacity-[0.03]" 
           style={{ 
@@ -83,7 +103,7 @@ const handleGoogleLogin = async () => {
       </div>
 
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center relative z-10">
-        {/* Left Side: Branding & Info */}
+        {/* Left Side */}
         <motion.div 
           initial={{ opacity: 0, x: -50 }}
           animate={{ opacity: 1, x: 0 }}
@@ -109,10 +129,10 @@ const handleGoogleLogin = async () => {
 
           <div className="grid grid-cols-2 gap-4">
             {[
-              { icon: Zap, label: "Lightning Fast", desc: "Sub-second deployments" },
+              { icon: Zap,        label: "Lightning Fast",   desc: "Sub-second deployments" },
               { icon: ShieldCheck, label: "Enterprise Grade", desc: "Bank-level security" },
-              { icon: Globe, label: "Global Edge", desc: "14+ edge locations" },
-              { icon: Cpu, label: "AI Powered", desc: "Intelligent code gen" }
+              { icon: Globe,      label: "Global Edge",      desc: "14+ edge locations" },
+              { icon: Cpu,        label: "AI Powered",       desc: "Intelligent code gen" }
             ].map((feature, i) => (
               <div key={i} className="p-4 bg-white/5 border border-white/10 rounded-2xl space-y-2 hover:bg-white/10 transition-colors group">
                 <feature.icon className="w-5 h-5 text-accent group-hover:scale-110 transition-transform" />
@@ -130,14 +150,9 @@ const handleGoogleLogin = async () => {
           transition={{ duration: 0.8, delay: 0.2 }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
-          style={{
-            rotateX,
-            rotateY,
-            transformStyle: "preserve-3d",
-          }}
+          style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
           className="relative group"
         >
-          {/* Card Glow */}
           <div className="absolute -inset-1 bg-gradient-to-r from-accent to-purple-600 rounded-[2.5rem] blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200" />
           
           <div 
@@ -149,6 +164,7 @@ const handleGoogleLogin = async () => {
               <p className="text-sm text-text-secondary opacity-60">Sign in to access your workspace and projects.</p>
             </div>
 
+            {/* ✅ Both buttons correctly inside this div */}
             <div className="space-y-4">
               <button 
                 onClick={handleGoogleLogin}
@@ -161,55 +177,27 @@ const handleGoogleLogin = async () => {
                   <>
                     <Chrome className="w-5 h-5" />
                     Continue with Google
+                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}
-                <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
               </button>
-              const handleGithubLogin = async () => {
-  setIsLoading(true);
-  try {
-    const response = await fetch(
-      `/api/auth/github/url?origin=${encodeURIComponent(window.location.origin)}`
-    );
-    const { url } = await response.json();
-    // Open popup for GitHub OAuth
-    const popup = window.open(url, 'github_oauth', 'width=600,height=700');
-    
-    // Listen for success message from popup
-    const handler = (event: MessageEvent) => {
-      if (event.data?.type === 'AUTH_SUCCESS') {
-        window.removeEventListener('message', handler);
-        popup?.close();
-        setIsLoading(false);
-      }
-    };
-    window.addEventListener('message', handler);
-    
-    // Timeout after 2 minutes
-    setTimeout(() => {
-      window.removeEventListener('message', handler);
-      setIsLoading(false);
-    }, 120000);
-  } catch (error) {
-    console.error("GitHub login failed:", error);
-    setIsLoading(false);
-  }
-};
-<button 
-  onClick={handleGithubLogin}
-  disabled={isLoading}
-  className="w-full bg-[#24292e] text-white h-14 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#2f363d] transition-all shadow-xl group disabled:opacity-50"
->
-  {isLoading ? (
-    <Sparkles className="w-5 h-5 animate-spin" />
-  ) : (
-    <>
-      <Github className="w-5 h-5" />
-      Continue with GitHub
-      <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
-    </>
-  )}
-</button>
+
+              {/* ✅ GitHub button now properly placed here */}
+              <button 
+                onClick={handleGithubLogin}
+                disabled={isLoading}
+                className="w-full bg-[#24292e] text-white h-14 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#2f363d] transition-all shadow-xl group disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <Sparkles className="w-5 h-5 animate-spin" />
+                ) : (
+                  <>
+                    <Github className="w-5 h-5" />
+                    Continue with GitHub
+                    <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
+              </button>
             </div>
 
             <div className="relative">
@@ -228,7 +216,6 @@ const handleGoogleLogin = async () => {
               <Zap className="w-6 h-6" />
             </div>
 
-            {/* Floating Elements for 3D depth */}
             <motion.div 
               style={{ transform: "translateZ(100px)" }}
               className="absolute -top-6 -right-6 w-12 h-12 bg-accent rounded-xl flex items-center justify-center shadow-lg shadow-accent/20 hidden lg:flex"
@@ -249,7 +236,6 @@ const handleGoogleLogin = async () => {
         </motion.div>
       </div>
 
-      {/* Footer Info */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-8 text-[10px] font-black uppercase tracking-[0.3em] text-text-secondary opacity-20">
         <span>Privacy Policy</span>
         <span>Terms of Service</span>
