@@ -221,6 +221,8 @@ app.get("/api/auth/github/url", (req, res) => {
 });
 
 app.get("/api/auth/github/callback", async (req, res) => {
+  // ✅ Override COOP for this specific route
+  res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
   const { code, state } = req.query;
 
   // ✅ Recover origin from state param
