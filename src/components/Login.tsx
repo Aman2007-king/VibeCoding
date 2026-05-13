@@ -165,14 +165,51 @@ const handleGoogleLogin = async () => {
                 )}
                 <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
               </button>
-
-              <button 
-                disabled
-                className="w-full bg-bg-secondary text-text-secondary h-14 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 border border-white/5 opacity-50 cursor-not-allowed"
-              >
-                <Github className="w-5 h-5" />
-                Continue with GitHub
-              </button>
+              const handleGithubLogin = async () => {
+  setIsLoading(true);
+  try {
+    const response = await fetch(
+      `/api/auth/github/url?origin=${encodeURIComponent(window.location.origin)}`
+    );
+    const { url } = await response.json();
+    // Open popup for GitHub OAuth
+    const popup = window.open(url, 'github_oauth', 'width=600,height=700');
+    
+    // Listen for success message from popup
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'AUTH_SUCCESS') {
+        window.removeEventListener('message', handler);
+        popup?.close();
+        setIsLoading(false);
+      }
+    };
+    window.addEventListener('message', handler);
+    
+    // Timeout after 2 minutes
+    setTimeout(() => {
+      window.removeEventListener('message', handler);
+      setIsLoading(false);
+    }, 120000);
+  } catch (error) {
+    console.error("GitHub login failed:", error);
+    setIsLoading(false);
+  }
+};
+<button 
+  onClick={handleGithubLogin}
+  disabled={isLoading}
+  className="w-full bg-[#24292e] text-white h-14 rounded-2xl font-black uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#2f363d] transition-all shadow-xl group disabled:opacity-50"
+>
+  {isLoading ? (
+    <Sparkles className="w-5 h-5 animate-spin" />
+  ) : (
+    <>
+      <Github className="w-5 h-5" />
+      Continue with GitHub
+      <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+    </>
+  )}
+</button>
             </div>
 
             <div className="relative">
