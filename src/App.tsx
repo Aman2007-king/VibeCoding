@@ -1070,25 +1070,34 @@ const handleSignIn = () => {
     }
   };
 
-  const handleMagicRefactor = async () => {
-    if (!activeFile) return;
-    setIsGenerating(true);
-    try {
-      const refactored = await manipulateCode(activeFile.code, "Refactor this code for better performance, readability, and modern standards. Keep the logic the same but improve the implementation.", activeFile.language, userApiKey, selectedModel);
-      updateFile(activeFileId, { code: refactored });
-      setAiResponse(`Refactored ${activeFile.name} successfully.`);
-      confetti({ 
-        particleCount: 50, 
-        spread: 60,
-        colors: ['#00ff00', '#00ffff', '#ff00ff']
-      });
-    } catch (err) {
-      console.error('Refactor error:', err);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+ const handleMagicRefactor = async () => {
+  if (!activeFile) return;
+  setIsGenerating(true);
+  try {
+    const contextPrompt = `Refactor this code for better performance, readability, and modern standards.
 
+Project context (other files):
+${files.filter(f => f.id !== activeFileId).map(f => `=== ${f.name} ===\n${f.code.substring(0, 500)}`).join('\n\n')}
+
+File to refactor (${activeFile.name}):
+${activeFile.code}`;
+
+    const refactored = await manipulateCode(
+      activeFile.code,
+      contextPrompt,
+      activeFile.language,
+      userApiKey,
+      selectedModel
+    );
+    updateFile(activeFileId, { code: refactored });
+    setAiResponse(`Refactored ${activeFile.name} with full project awareness.`);
+    confetti({ particleCount: 50, spread: 60, colors: ['#00ff00', '#00ffff', '#ff00ff'] });
+  } catch (err) {
+    console.error('Refactor error:', err);
+  } finally {
+    setIsGenerating(false);
+  }
+};
   const handleVoiceCommand = async (text: string) => {
     setIsGenerating(true);
     setActiveTab('ai');
@@ -1212,59 +1221,48 @@ const handleSignIn = () => {
   };
 
   const handleGenerate = async () => {
-    if (!aiPrompt) return;
-    setIsGenerating(true);
-    setActiveTab('ai');
-    setAiResponse('Nexus AI is thinking...');
-    try {
-      if (isProjectMode) {
-        setAiResponse('Generating full project structure...');
-        const project = await generateProject(aiPrompt, files, useThinking, userApiKey, selectedModel);
-        
-        // Update existing files and create new ones
-        const newFiles = [...files];
-        project.files.forEach((aiFile: any) => {
-          const existingIdx = newFiles.findIndex(f => f.name === aiFile.name);
-          if (existingIdx !== -1) {
-            newFiles[existingIdx] = { ...newFiles[existingIdx], code: aiFile.code, language: aiFile.language };
-          } else {
-            const newId = Math.max(...newFiles.map(f => f.id), 0) + 1;
-            newFiles.push({
-              id: newId,
-              name: aiFile.name,
-              code: aiFile.code,
-              language: aiFile.language,
-              type: 'file',
-              parentId: null
-            });
-          }
-        });
-        
-        setFiles(newFiles);
-        setAiResponse(`Project generated successfully! Created/Updated ${project.files.length} files.`);
-        handleRun();
-      } else {
-        const generated = await generateCodeStream(aiPrompt, activeFile.language, useThinking, (text) => {
-          setAiResponse(text);
-        }, userApiKey, selectedModel);
-        
-        // Strip markdown code blocks if present
-        const cleanCode = generated.replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
-        
-        updateFile(activeFileId, { code: cleanCode });
-        handleRun();
-      }
-      
-      confetti({
-        particleCount: 50,
-        spread: 60,
+  if (!aiPrompt) return;
+  setIsGenerating(true);
+  setActiveTab('ai');
+  setAiResponse('Nexus AI is thinking...');
+  try {
+    if (isProjectMode) {
+      setAiResponse('Generating full project structure...');
+      const project = await generateProject(aiPrompt, files, useThinking, userApiKey, selectedModel);
+      const newFiles = [...files];
+      project.files.forEach((aiFile: any) => {
+        const existingIdx = newFiles.findIndex(f => f.name === aiFile.name);
+        if (existingIdx !== -1) {
+          newFiles[existingIdx] = { ...newFiles[existingIdx], code: aiFile.code, language: aiFile.language };
+        } else {
+          const newId = Math.max(...newFiles.map(f => f.id), 0) + 1;
+          newFiles.push({ id: newId, name: aiFile.name, code: aiFile.code, language: aiFile.language, type: 'file', parentId: null });
+        }
       });
-    } catch (error) {
-      setAiResponse('Error generating code. Please try again.');
-    } finally {
-      setIsGenerating(false);
+      setFiles(newFiles);
+      setAiResponse(`Project generated! Created/Updated ${project.files.length} files.`);
+      handleRun();
+    } else {
+      // ✅ Include full project context in generation
+      const contextPrompt = files.length > 1 
+        ? `${aiPrompt}\n\nExisting project context:\n${buildProjectContext()}\n\nModify or create code that fits with the existing project.`
+        : aiPrompt;
+
+      const generated = await generateCodeStream(contextPrompt, activeFile.language, useThinking, (text) => {
+        setAiResponse(text);
+      }, userApiKey, selectedModel);
+
+      const cleanCode = generated.replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
+      updateFile(activeFileId, { code: cleanCode });
+      handleRun();
     }
-  };
+    confetti({ particleCount: 50, spread: 60 });
+  } catch (error) {
+    setAiResponse('Error generating code. Please try again.');
+  } finally {
+    setIsGenerating(false);
+  }
+};
 
   const handleFastFix = async () => {
     setIsGenerating(true);
@@ -1280,18 +1278,25 @@ const handleSignIn = () => {
     }
   };
 
-  const handleDebug = async () => {
-    setIsDebugging(true);
-    setActiveTab('ai');
-    try {
-      const debugResult = await debugCode(activeFile.code, activeFile.language, userApiKey, selectedModel);
-      setAiResponse(debugResult);
-    } catch (error) {
-      setAiResponse('Error debugging code.');
-    } finally {
-      setIsDebugging(false);
-    }
-  };
+ const handleDebug = async () => {
+  setIsDebugging(true);
+  setActiveTab('ai');
+  try {
+    const allContext = `Debug this entire project. Check all files for bugs, errors, and issues.
+
+PROJECT FILES:
+${buildProjectContext()}
+
+Focus on: ${activeFile.name} but check other files too.`;
+    
+    const debugResult = await debugCode(allContext, activeFile.language, userApiKey, selectedModel);
+    setAiResponse(debugResult);
+  } catch (error) {
+    setAiResponse('Error debugging code.');
+  } finally {
+    setIsDebugging(false);
+  }
+};
 
   const handleChatSend = async (customInput?: string) => {
     const input = customInput || chatInput;
@@ -1312,10 +1317,14 @@ const handleSignIn = () => {
     // Add a placeholder for AI response
     setChatHistory(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
-    const systemInstruction = `You are Nexus AI, a professional coding assistant. You help developers build, debug, and optimize their code. Be concise, technical, and helpful.
-    Current File: ${activeFile.name}
-    Code Context:
-    ${activeFile.code}`;
+   const systemInstruction = `You are Nexus AI, a professional coding assistant built into the Nexus Forge IDE. You help developers build, debug, and optimize their code. Be concise, technical, and helpful.
+
+CURRENT PROJECT FILES (${files.length} files):
+${buildProjectContext()}
+
+ACTIVE FILE: ${activeFile.name} (${activeFile.language})
+
+When suggesting changes, always mention which file to edit. When you see bugs, check all files for related issues.`;
 
     try {
       let fullAiResponse = '';
