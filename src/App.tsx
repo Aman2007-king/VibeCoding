@@ -2224,67 +2224,88 @@ const handleSignIn = () => {
     }
   }, [files, breakpoints, isDebuggerEnabled]);
 
-  const handleExecuteCode = async () => {
+const handleExecuteCode = async () => {
   if (!activeFile) return;
-  
-  const executableLanguages = ['python', 'javascript', 'typescript', 'cpp', 'c', 'java'];
-  
-  if (!executableLanguages.includes(activeFile.language)) {
-    showToast(`${activeFile.language} execution not supported yet`, 'error');
+
+  // ✅ Detect language from filename extension, not Monaco
+  const getLanguageFromFile = (filename: string): string => {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    const map: Record<string, string> = {
+      'py': 'python',
+      'js': 'javascript',
+      'ts': 'javascript', // transpile to JS
+      'java': 'java',
+      'cpp': 'cpp',
+      'cc': 'cpp',
+      'c': 'c',
+      'go': 'go',
+      'rb': 'ruby',
+      'php': 'php',
+      'sh': 'bash',
+      'rs': 'rust',
+    };
+    return map[ext || ''] || activeFile.language;
+  };
+
+  const detectedLanguage = getLanguageFromFile(activeFile.name);
+  const executableLanguages = ['python', 'javascript', 'java', 'cpp', 'c', 'go', 'ruby', 'php', 'bash', 'rust'];
+
+  if (!executableLanguages.includes(detectedLanguage)) {
+    showToast(`${activeFile.name}: not executable. Supported: Python, JS, Java, C, C++`, 'error');
     return;
   }
-  
+
   setIsGenerating(true);
   setActiveTab('command');
-  
+
   const timestamp = new Date().toLocaleTimeString();
-  setTerminalHistory(prev => [...prev, { 
-    cmd: `run ${activeFile.name}`, 
-    output: `Executing ${activeFile.name}...`,
+  setTerminalHistory(prev => [...prev, {
+    cmd: `run ${activeFile.name}`,
+    output: `Executing ${activeFile.name} as ${detectedLanguage}...`,
     type: 'info',
-    timestamp 
+    timestamp
   }]);
-  
+
   try {
     const response = await fetch('/api/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        code: activeFile.code, 
-        language: activeFile.language 
+      body: JSON.stringify({
+        code: activeFile.code,
+        language: detectedLanguage  // ✅ Use detected language
       })
     });
-    
+
     const result = await response.json();
-    
+
     if (result.output) {
-      setTerminalHistory(prev => [...prev, { 
+      setTerminalHistory(prev => [...prev, {
         output: result.output,
         type: 'success',
         timestamp: new Date().toLocaleTimeString()
       }]);
     }
-    
+
     if (result.error) {
-      setTerminalHistory(prev => [...prev, { 
+      setTerminalHistory(prev => [...prev, {
         output: result.error,
         type: 'error',
         timestamp: new Date().toLocaleTimeString()
       }]);
     }
-    
+
     if (!result.output && !result.error) {
-      setTerminalHistory(prev => [...prev, { 
+      setTerminalHistory(prev => [...prev, {
         output: 'Program exited with no output.',
         type: 'info',
         timestamp: new Date().toLocaleTimeString()
       }]);
     }
-    
+
     showToast(`${activeFile.name} executed!`, 'success');
-    
+
   } catch (err: any) {
-    setTerminalHistory(prev => [...prev, { 
+    setTerminalHistory(prev => [...prev, {
       output: `Failed to execute: ${err.message}`,
       type: 'error',
       timestamp: new Date().toLocaleTimeString()
