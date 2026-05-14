@@ -606,38 +606,43 @@ app.use((req, res, next) => {
     }
   });
 
-  // ─── Code Execution Endpoint ───────────────────────────────────────────────
 // ─── Code Execution Endpoint ───────────────────────────────────────────────
   app.post("/api/execute", async (req, res) => {
-    const { code, language } = req.body;
-    if (!code) return res.status(400).json({ error: "No code provided" });
+    const { code, language, filename } = req.body;
 
-    const jdoodleLanguage: Record<string, { language: string, versionIndex: string }> = {
-      'cpp':        { language: 'cpp17',      versionIndex: '0' },
-      'c':          { language: 'c',          versionIndex: '5' },
-      'java':       { language: 'java',       versionIndex: '4' },
-      'python':     { language: 'python3',    versionIndex: '4' },
-      'javascript': { language: 'nodejs',     versionIndex: '4' },
-      'typescript': { language: 'typescript', versionIndex: '1' },
-      'go':         { language: 'go',         versionIndex: '4' },
-      'rust':       { language: 'rust',       versionIndex: '4' },
-      'ruby':       { language: 'ruby',       versionIndex: '4' },
-      'php':        { language: 'php',        versionIndex: '4' },
-      'csharp':     { language: 'csharp',     versionIndex: '4' },
-      'kotlin':     { language: 'kotlin',     versionIndex: '3' },
-      'swift':      { language: 'swift',      versionIndex: '4' },
-      'r':          { language: 'r',          versionIndex: '4' },
-    };
+// Auto-detect language from filename if language is wrong
+const extToLang: Record<string, string> = {
+  '.py': 'python',
+  '.js': 'javascript', 
+  '.ts': 'typescript',
+  '.cpp': 'cpp',
+  '.c': 'c',
+  '.java': 'java',
+  '.go': 'go',
+  '.rs': 'rust',
+  '.rb': 'ruby',
+  '.php': 'php',
+  '.cs': 'csharp',
+  '.kt': 'kotlin',
+  '.swift': 'swift',
+  '.r': 'r',
+};
 
-    const jdoodleLang = jdoodleLanguage[language];
-    if (!jdoodleLang) {
-      return res.json({
-        success: false,
-        output: '',
-        error: `Language "${language}" is not supported.`,
-        language
-      });
-    }
+const detectedLanguage = filename 
+  ? extToLang[filename.substring(filename.lastIndexOf('.'))] || language
+  : language;
+
+const finalLanguage = detectedLanguage;
+
+   const jdoodleLang = jdoodleLanguage[finalLanguage];
+if (!jdoodleLang) {
+  return res.json({
+    success: false,
+    output: '',
+    error: `Language "${finalLanguage}" is not supported.`,
+    language: finalLanguage
+  });
+}
 
     try {
       const response = await axios.post(
@@ -658,13 +663,13 @@ app.use((req, res, next) => {
       const result = response.data;
       const output = result.output || '';
 
-      return res.json({
-        success: result.statusCode === 200,
-        output: result.statusCode === 200 ? output : '',
-        error: result.statusCode !== 200 ? output : '',
-        language,
-        via: 'JDoodle'
-      });
+     return res.json({
+  success: result.statusCode === 200,
+  output: result.statusCode === 200 ? output : '',
+  error: result.statusCode !== 200 ? output : '',
+  language: finalLanguage,
+  via: 'JDoodle'
+});
 
     } catch (err: any) {
       return res.json({
