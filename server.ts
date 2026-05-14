@@ -607,80 +607,75 @@ app.use((req, res, next) => {
   });
 
   // ─── Code Execution Endpoint ───────────────────────────────────────────────
+// ─── Code Execution Endpoint ───────────────────────────────────────────────
   app.post("/api/execute", async (req, res) => {
-  const { code, language } = req.body;
-  if (!code) return res.status(400).json({ error: "No code provided" });
+    const { code, language } = req.body;
+    if (!code) return res.status(400).json({ error: "No code provided" });
 
- app.post("/api/execute", async (req, res) => {
-  const { code, language } = req.body;
-  if (!code) return res.status(400).json({ error: "No code provided" });
+    const jdoodleLanguage: Record<string, { language: string, versionIndex: string }> = {
+      'cpp':        { language: 'cpp17',      versionIndex: '0' },
+      'c':          { language: 'c',          versionIndex: '5' },
+      'java':       { language: 'java',       versionIndex: '4' },
+      'python':     { language: 'python3',    versionIndex: '4' },
+      'javascript': { language: 'nodejs',     versionIndex: '4' },
+      'typescript': { language: 'typescript', versionIndex: '1' },
+      'go':         { language: 'go',         versionIndex: '4' },
+      'rust':       { language: 'rust',       versionIndex: '4' },
+      'ruby':       { language: 'ruby',       versionIndex: '4' },
+      'php':        { language: 'php',        versionIndex: '4' },
+      'csharp':     { language: 'csharp',     versionIndex: '4' },
+      'kotlin':     { language: 'kotlin',     versionIndex: '3' },
+      'swift':      { language: 'swift',      versionIndex: '4' },
+      'r':          { language: 'r',          versionIndex: '4' },
+    };
 
-  const jdoodleLanguage: Record<string, { language: string, versionIndex: string }> = {
-    'cpp':        { language: 'cpp17',      versionIndex: '0' },
-    'c':          { language: 'c',          versionIndex: '5' },
-    'java':       { language: 'java',       versionIndex: '4' },
-    'python':     { language: 'python3',    versionIndex: '4' },
-    'javascript': { language: 'nodejs',     versionIndex: '4' },
-    'typescript': { language: 'typescript', versionIndex: '1' },
-    'go':         { language: 'go',         versionIndex: '4' },
-    'rust':       { language: 'rust',       versionIndex: '4' },
-    'ruby':       { language: 'ruby',       versionIndex: '4' },
-    'php':        { language: 'php',        versionIndex: '4' },
-    'csharp':     { language: 'csharp',     versionIndex: '4' },
-    'kotlin':     { language: 'kotlin',     versionIndex: '3' },
-    'swift':      { language: 'swift',      versionIndex: '4' },
-    'r':          { language: 'r',          versionIndex: '4' },
-  };
+    const jdoodleLang = jdoodleLanguage[language];
+    if (!jdoodleLang) {
+      return res.json({
+        success: false,
+        output: '',
+        error: `Language "${language}" is not supported.`,
+        language
+      });
+    }
 
-  const jdoodleLang = jdoodleLanguage[language];
-  if (!jdoodleLang) {
-    return res.json({
-      success: false,
-      output: '',
-      error: `Language "${language}" is not supported.`,
-      language
-    });
-  }
+    try {
+      const response = await axios.post(
+        'https://api.jdoodle.com/v1/execute',
+        {
+          script: code,
+          language: jdoodleLang.language,
+          versionIndex: jdoodleLang.versionIndex,
+          clientId: process.env.JDOODLE_CLIENT_ID || "your_client_id",
+          clientSecret: process.env.JDOODLE_CLIENT_SECRET || "your_client_secret",
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 30000
+        }
+      );
 
-  try {
-    const response = await axios.post(
-      'https://api.jdoodle.com/v1/execute',
-      {
-        script: code,
-        language: jdoodleLang.language,
-        versionIndex: jdoodleLang.versionIndex,
-        clientId: process.env.JDOODLE_CLIENT_ID || "your_client_id",
-        clientSecret: process.env.JDOODLE_CLIENT_SECRET || "your_client_secret",
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 30000
-      }
-    );
+      const result = response.data;
+      const output = result.output || '';
 
-    const result = response.data;
-    const output = result.output || '';
+      return res.json({
+        success: result.statusCode === 200,
+        output: result.statusCode === 200 ? output : '',
+        error: result.statusCode !== 200 ? output : '',
+        language,
+        via: 'JDoodle'
+      });
 
-    return res.json({
-      success: result.statusCode === 200,
-      output: result.statusCode === 200 ? output : '',
-      error: result.statusCode !== 200 ? output : '',
-      language,
-      via: 'JDoodle'
-    });
-
-  } catch (err: any) {
-    return res.json({
-      success: false,
-      output: '',
-      error: err.response?.data?.error || err.message || 'Execution failed',
-      language
-    });
-  }
-});
-
+    } catch (err: any) {
+      return res.json({
+        success: false,
+        output: '',
+        error: err.response?.data?.error || err.message || 'Execution failed',
+        language
+      });
+    }
+  });
   // ──────────────────────────────────────────────────────────────────────────
-  // Vite middleware for development
   // Vite middleware for development
   const isProduction = process.env.NODE_ENV === "production";
   const distPath = path.join(__dirname, "dist");
@@ -715,8 +710,6 @@ httpServer.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
-)
-
 startServer().catch(err => {
   console.error("Failed to start server:", err);
   process.exit(1);
