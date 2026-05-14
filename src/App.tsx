@@ -3831,6 +3831,21 @@ const handleSignIn = () => {
               {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Layers className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">Full Stack Template</span>
             </button>
+            {/* Add this BEFORE the Run Project button */}
+<button 
+  onClick={handleExecuteCode}
+  disabled={isGenerating}
+  className={cn(
+    "flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
+    ['python', 'javascript', 'typescript', 'cpp', 'c', 'java'].includes(activeFile?.language || '')
+      ? "bg-blue-600 text-white hover:bg-blue-500"
+      : "bg-white/5 text-text-secondary cursor-not-allowed opacity-50"
+  )}
+  title="Execute code server-side"
+>
+  {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
+  <span className="hidden sm:inline">Execute</span>
+</button>
             <button 
               onClick={handleRun}
               className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
@@ -5244,44 +5259,58 @@ const handleSignIn = () => {
                   </motion.div>
                 )}
 
-                {activeTab === 'command' && (
-                  <motion.div
-                    key="terminal-content"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="h-full flex flex-col bg-black/40 rounded-2xl border border-white/10 overflow-hidden font-mono"
-                  >
-                    <div className="flex items-center gap-2 px-4 py-2 bg-white/5 border-b border-white/5">
-                      <Terminal className="w-3 h-3 opacity-50" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Integrated Terminal</span>
-                    </div>
-                    <div className="flex-1 p-4 space-y-2 text-[11px] custom-scrollbar">
-                      <div className="text-accent opacity-50 mb-4">Nexus Forge Terminal v1.0.0</div>
-                      {terminalHistory.map((entry, i) => (
-                        <div key={i} className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-green-400">➜</span>
-                            <span className="text-blue-400">~/project</span>
-                            <span>{entry.cmd}</span>
-                          </div>
-                          <div className="opacity-60 whitespace-pre-wrap pl-4">{entry.output}</div>
-                        </div>
-                      ))}
-                      <div className="flex items-center gap-2">
-                        <span className="text-green-400">➜</span>
-                        <span className="text-blue-400">~/project</span>
-                        <input 
-                          id="terminal-input"
-                          name="terminal-input"
-                          autoFocus
-                          value={terminalInput}
-                          onChange={(e) => setTerminalInput(e.target.value)}
-                          onKeyDown={handleTerminalCommand}
-                          className="flex-1 bg-transparent outline-none border-none p-0 text-[11px]"
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
+     {activeTab === 'command' && (
+  <motion.div key="terminal-content" ...>
+    <div className="flex items-center gap-2 px-4 py-2 bg-white/5 border-b border-white/5">
+      <Terminal className="w-3 h-3 opacity-50" />
+      <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Terminal</span>
+      <button 
+        onClick={() => setTerminalHistory([])}
+        className="ml-auto text-[9px] text-red-400 hover:underline"
+      >
+        Clear
+      </button>
+    </div>
+    <div className="flex-1 p-4 space-y-2 text-[11px] custom-scrollbar overflow-y-auto">
+      <div className="text-accent opacity-50 mb-4">Nexus Forge Terminal v1.0.0</div>
+      {terminalHistory.map((entry, i) => (
+        <div key={i} className="space-y-1">
+          {entry.cmd && (
+            <div className="flex items-center gap-2">
+              <span className="text-green-400">➜</span>
+              <span className="text-blue-400">~/project</span>
+              <span className="text-white">{entry.cmd}</span>
+            </div>
+          )}
+          {(entry.output || entry.content) && (
+            <div className={cn(
+              "whitespace-pre-wrap pl-4 font-mono",
+              entry.type === 'error' ? "text-red-400" :
+              entry.type === 'success' ? "text-green-400" :
+              entry.type === 'warn' ? "text-yellow-400" :
+              "text-text-secondary opacity-80"
+            )}>
+              {entry.output || entry.content}
+            </div>
+          )}
+        </div>
+      ))}
+      <div className="flex items-center gap-2">
+        <span className="text-green-400">➜</span>
+        <span className="text-blue-400">~/project</span>
+        <input 
+          id="terminal-input"
+          name="terminal-input"
+          value={terminalInput}
+          onChange={(e) => setTerminalInput(e.target.value)}
+          onKeyDown={handleTerminalCommand}
+          className="flex-1 bg-transparent outline-none border-none p-0 text-[11px] text-white"
+          placeholder="type a command..."
+        />
+      </div>
+    </div>
+  </motion.div>
+)}
                 )}
               </AnimatePresence>
             </div>
