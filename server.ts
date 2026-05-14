@@ -608,74 +608,123 @@ app.use((req, res, next) => {
 
   // ─── Code Execution Endpoint ───────────────────────────────────────────────
   app.post("/api/execute", async (req, res) => {
-    const { code, language } = req.body;
+  const { code, language } = req.body;
+  if (!code) return res.status(400).json({ error: "No code provided" });
 
-    if (!code) return res.status(400).json({ error: "No code provided" });
-
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-"));
-
+  // ✅ Languages available on Render free tier
+  const nativelySupported = ['python', 'javascript'];
+  
+  if (!nativelySupported.includes(language)) {
+    // ✅ Use Judge0 API for Java, C, C++, etc (free tier available)
     try {
-      let filename = "";
-      let runCommand = "";
+      const languageIds: Record<string, number> = {
+        'java': 62,
+        'cpp': 54,
+        'c': 50,
+        'go': 60,
+        'rust': 73,
+        'ruby': 72,
+        'php': 68,
+        'bash': 46,
+        'typescript': 74,
+      };
 
-      switch (language) {
-        case "python":
-          filename = path.join(tmpDir, "main.py");
-          fs.writeFileSync(filename, code);
-          runCommand = `timeout 10 python3 "${filename}"`;
-          break;
-        case "javascript":
-        case "typescript":
-          filename = path.join(tmpDir, "main.js");
-          fs.writeFileSync(filename, code);
-          runCommand = `timeout 10 node "${filename}"`;
-          break;
-        case "cpp":
-          filename = path.join(tmpDir, "main.cpp");
-          const outFile = path.join(tmpDir, "main");
-          fs.writeFileSync(filename, code);
-          runCommand = `g++ -o "${outFile}" "${filename}" && timeout 10 "${outFile}"`;
-          break;
-        case "java":
-          filename = path.join(tmpDir, "Main.java");
-          fs.writeFileSync(filename, code);
-          runCommand = `cd "${tmpDir}" && javac Main.java && timeout 10 java Main`;
-          break;
-        case "c":
-          filename = path.join(tmpDir, "main.c");
-          const cOut = path.join(tmpDir, "main");
-          fs.writeFileSync(filename, code);
-          runCommand = `gcc -o "${cOut}" "${filename}" && timeout 10 "${cOut}"`;
-          break;
-        default:
-          return res.status(400).json({ error: `Language ${language} not supported for execution` });
+      const langId = languageIds[language];
+      if (!langId) {
+        return res.json({
+          success: false,
+          output: '',
+          error: `Language "${language}" is not supported for execution yet.`
+        });
       }
 
-      const { stdout, stderr } = await execAsync(runCommand, {
-        timeout: 15000,
-        maxBuffer: 1024 * 1024, // 1MB output limit
-      });
+      // Submit to Judge0
+      const submitRes = await axios.post(
+        'https://judge0-ce.p.rapidapi.com/submissions?base64_encoded=false&wait=true',
+        {
+          source_code: code,
+          language_id: langId,
+          stdin: '',
+          cpu_time_limit: 10,
+          memory_limit: 128000,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RapidAPI-Key': process.env.JUDGE0_API_KEY || '',
+            'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com'
+          },
+          timeout: 30000
+        }
+      );
 
-      res.json({
-        success: true,
-        output: stdout || "",
-        error: stderr || "",
+      const result = submitRes.data;
+      const output = result.stdout || '';
+      const error = result.stderr || result.compile_output || '';
+      const status = result.status?.description || 'Unknown';
+
+      return res.json({
+        success: !error,
+        output: output,
+        error: error,
+        status: status,
         language,
+        time: result.time,
+        memory: result.memory,
+        via: 'Judge0'
       });
 
     } catch (err: any) {
-      res.json({
+      // Fallback message if Judge0 fails
+      return res.json({
         success: false,
-        output: "",
-        error: err.stderr || err.message || "Execution failed",
-        language,
+        output: '',
+        error: `${language.toUpperCase()} requires an external compiler. Add JUDGE0_API_KEY to Render environment variables to enable it.\n\nGet free key at: https://rapidapi.com/judge0-official/api/judge0-ce`,
+        language
       });
-    } finally {
-      try {
-        fs.rmSync(tmpDir, { recursive: true });
-      } catch {}
     }
-  });
+  }
+
+  // Native execution for Python and JavaScript
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-"));
+  try {
+    let filename = "";
+    let runCommand = "";
+
+    if (language === 'python') {
+      filename = path.join(tmpDir, "main.py");
+      fs.writeFileSync(filename, code);
+      runCommand = `timeout 10 python3 "${filename}"`;
+    } else if (language === 'javascript') {
+      filename = path.join(tmpDir, "main.js");
+      fs.writeFileSync(filename, code);
+      runCommand = `timeout 10 node "${filename}"`;
+    }
+
+    const { stdout, stderr } = await execAsync(runCommand, {
+      timeout: 15000,
+      maxBuffer: 1024 * 1024,
+    });
+
+    res.json({
+      success: true,
+      output: stdout || "",
+      error: stderr || "",
+      language,
+      via: 'Native'
+    });
+
+  } catch (err: any) {
+    res.json({
+      success: false,
+      output: "",
+      error: err.stderr || err.message || "Execution failed",
+      language,
+    });
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+  }
+});
   // ──────────────────────────────────────────────────────────────────────────
 
   // Vite middleware for development
