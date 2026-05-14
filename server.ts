@@ -169,16 +169,19 @@ async function startServer() {
   app.use(express.json());
 
   // Input Sanitization Middleware (Basic XSS Protection) - MUST be after express.json()
-  app.use((req, res, next) => {
-    if (req.body && typeof req.body === 'object') {
-      for (const key in req.body) {
-        if (typeof req.body[key] === 'string') {
-          req.body[key] = validator.escape(req.body[key]);
-        }
+app.use((req, res, next) => {
+  // Skip sanitization for code execution — escaping breaks code syntax
+  if (req.path === '/api/execute') return next();
+  
+  if (req.body && typeof req.body === 'object') {
+    for (const key in req.body) {
+      if (typeof req.body[key] === 'string') {
+        req.body[key] = validator.escape(req.body[key]);
       }
     }
-    next();
-  });
+  }
+  next();
+});
 
   app.use(session({
     secret: process.env.SESSION_SECRET || 'nexus_forge_super_secret_2007',
