@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build",
+    "build": "npm install && vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "start": "node server.ts"
+    "start": "node server.ts",
+    "render-build": "sudo apt-get install -y g++ gcc default-jdk || true && npm install && vite build"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
