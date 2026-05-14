@@ -611,79 +611,102 @@ app.use((req, res, next) => {
   const { code, language } = req.body;
   if (!code) return res.status(400).json({ error: "No code provided" });
 
-  // ✅ Languages available on Render free tier
-  const nativelySupported = ['python', 'javascript'];
-  
-  if (!nativelySupported.includes(language)) {
-    // ✅ Use Judge0 API for Java, C, C++, etc (free tier available)
-    try {
-      const languageIds: Record<string, number> = {
-        'java': 62,
-        'cpp': 54,
-        'c': 50,
-        'go': 60,
-        'rust': 73,
-        'ruby': 72,
-        'php': 68,
-        'bash': 46,
-        'typescript': 74,
-      };
+  // Language mapping for Piston API
+  const pistonLanguages: Record<string, { language: string; version: string }> = {
+    'python':     { language: 'python',     version: '3.10.0' },
+    'javascript': { language: 'javascript', version: '18.15.0' },
+    'typescript': { language: 'typescript', version: '5.0.3' },
+    'java':       { language: 'java',       version: '15.0.2' },
+    'cpp':        { language: 'c++',        version: '10.2.0' },
+    'c':          { language: 'c',          version: '10.2.0' },
+    'go':         { language: 'go',         version: '1.16.2' },
+    'rust':       { language: 'rust',       version: '1.50.0' },
+    'ruby':       { language: 'ruby',       version: '3.0.1' },
+    'php':        { language: 'php',        version: '8.2.3' },
+    'bash':       { language: 'bash',       version: '5.2.0' },
+    'shell':      { language: 'bash',       version: '5.2.0' },
+    'csharp':     { language: 'csharp',     version: '6.12.0' },
+    'kotlin':     { language: 'kotlin',     version: '1.8.20' },
+    'swift':      { language: 'swift',      version: '5.3.3' },
+    'r':          { language: 'r',          version: '4.1.1' },
+    'sql':        { language: 'sqlite3',    version: '3.36.0' },
+  };
 
-      const langId = languageIds[language];
-      if (!langId) {
-        return res.json({
-          success: false,
-          output: '',
-          error: `Language "${language}" is not supported for execution yet.`
-        });
-      }
+  const pistonLang = pistonLanguages[language];
 
-      // Submit to Judge0
-      const submitRes = await axios.post(
-        'https://judge0-ce.p.rapidapi.com/submissions?base64_encoded=false&wait=true',
-        {
-          source_code: code,
-          language_id: langId,
-          stdin: '',
-          cpu_time_limit: 10,
-          memory_limit: 128000,
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-RapidAPI-Key': process.env.JUDGE0_API_KEY || '',
-            'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com'
-          },
-          timeout: 30000
-        }
-      );
-
-      const result = submitRes.data;
-      const output = result.stdout || '';
-      const error = result.stderr || result.compile_output || '';
-      const status = result.status?.description || 'Unknown';
-
-      return res.json({
-        success: !error,
-        output: output,
-        error: error,
-        status: status,
-        language,
-        time: result.time,
-        memory: result.memory,
-        via: 'Judge0'
-      });
-
-    } catch (err: any) {
-      // Fallback message if Judge0 fails
-      return res.json({
-        success: false,
-        output: '',
-        error: `${language.toUpperCase()} requires an external compiler. Add JUDGE0_API_KEY to Render environment variables to enable it.\n\nGet free key at: https://rapidapi.com/judge0-official/api/judge0-ce`,
-        language
-      });
-    }
+  if (!pistonLang) {
+    return res.json({
+      success: false,
+      output: '',
+      error: `Language "${language}" is not supported yet. Supported: Python, JS, TS, Java, C, C++, Go, Rust, Ruby, PHP, C#, Kotlin, Swift, R`,
+      language
+    });
   }
+
+  // Determine filename based on language
+  const fileExtensions: Record<string, string> = {
+    'python': 'main.py',
+    'javascript': 'main.js',
+    'typescript': 'main.ts',
+    'java': 'Main.java',
+    'cpp': 'main.cpp',
+    'c': 'main.c',
+    'go': 'main.go',
+    'rust': 'main.rs',
+    'ruby': 'main.rb',
+    'php': 'main.php',
+    'bash': 'main.sh',
+    'shell': 'main.sh',
+    'csharp': 'main.cs',
+    'kotlin': 'Main.kt',
+    'swift': 'main.swift',
+    'r': 'main.r',
+    'sql': 'main.sql',
+  };
+
+  try {
+    const response = await axios.post(
+      'https://emkc.org/api/v2/piston/execute',
+      {
+        language: pistonLang.language,
+        version: pistonLang.version,
+        files: [{
+          name: fileExtensions[language] || 'main',
+          content: code
+        }],
+        stdin: '',
+        args: [],
+        compile_timeout: 10000,
+        run_timeout: 10000,
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000
+      }
+    );
+
+    const result = response.data;
+    const output = result.run?.stdout || '';
+    const error = result.run?.stderr || result.compile?.stderr || '';
+    const compileOutput = result.compile?.stdout || '';
+
+    return res.json({
+      success: !error,
+      output: compileOutput ? compileOutput + '\n' + output : output,
+      error: error,
+      language,
+      via: 'Piston'
+    });
+
+  } catch (err: any) {
+    return res.json({
+      success: false,
+      output: '',
+      error: err.response?.data?.message || err.message || 'Piston API failed',
+      language
+    });
+  }
+});
 
   // Native execution for Python and JavaScript
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-"));
