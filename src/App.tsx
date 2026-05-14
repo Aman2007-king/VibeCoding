@@ -2013,7 +2013,77 @@ const handleSignIn = () => {
         </div>
       </div>
     `;
+
+    const handleExecuteCode = async () => {
+  if (!activeFile) return;
+  
+  const executableLanguages = ['python', 'javascript', 'typescript', 'cpp', 'c', 'java'];
+  
+  if (!executableLanguages.includes(activeFile.language)) {
+    showToast(`${activeFile.language} execution not supported yet`, 'error');
+    return;
+  }
+  
+  setIsGenerating(true);
+  setActiveTab('command');
+  
+  const timestamp = new Date().toLocaleTimeString();
+  setTerminalHistory(prev => [...prev, { 
+    cmd: `run ${activeFile.name}`, 
+    output: `Executing ${activeFile.name}...`,
+    type: 'info',
+    timestamp 
+  }]);
+  
+  try {
+    const response = await fetch('/api/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        code: activeFile.code, 
+        language: activeFile.language 
+      })
+    });
     
+    const result = await response.json();
+    
+    if (result.output) {
+      setTerminalHistory(prev => [...prev, { 
+        output: result.output,
+        type: 'success',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    }
+    
+    if (result.error) {
+      setTerminalHistory(prev => [...prev, { 
+        output: result.error,
+        type: 'error',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    }
+    
+    if (!result.output && !result.error) {
+      setTerminalHistory(prev => [...prev, { 
+        output: 'Program exited with no output.',
+        type: 'info',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    }
+    
+    showToast(`${activeFile.name} executed!`, 'success');
+    
+  } catch (err: any) {
+    setTerminalHistory(prev => [...prev, { 
+      output: `Failed to execute: ${err.message}`,
+      type: 'error',
+      timestamp: new Date().toLocaleTimeString()
+    }]);
+    showToast('Execution failed', 'error');
+  } finally {
+    setIsGenerating(false);
+  }
+};
     const cssCode = files
       .filter(f => f.language === 'css' || f.name.toLowerCase().endsWith('.css'))
       .map(f => f.code)
