@@ -707,47 +707,6 @@ app.use((req, res, next) => {
     });
   }
 });
-
-  // Native execution for Python and JavaScript
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-"));
-  try {
-    let filename = "";
-    let runCommand = "";
-
-    if (language === 'python') {
-      filename = path.join(tmpDir, "main.py");
-      fs.writeFileSync(filename, code);
-      runCommand = `timeout 10 python3 "${filename}"`;
-    } else if (language === 'javascript') {
-      filename = path.join(tmpDir, "main.js");
-      fs.writeFileSync(filename, code);
-      runCommand = `timeout 10 node "${filename}"`;
-    }
-
-    const { stdout, stderr } = await execAsync(runCommand, {
-      timeout: 15000,
-      maxBuffer: 1024 * 1024,
-    });
-
-    res.json({
-      success: true,
-      output: stdout || "",
-      error: stderr || "",
-      language,
-      via: 'Native'
-    });
-
-  } catch (err: any) {
-    res.json({
-      success: false,
-      output: "",
-      error: err.stderr || err.message || "Execution failed",
-      language,
-    });
-  } finally {
-    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
-  }
-});
   // ──────────────────────────────────────────────────────────────────────────
 
   // Vite middleware for development
