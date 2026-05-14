@@ -14,11 +14,16 @@ import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import crypto from "crypto";
 import validator from "validator";
+import { exec } from "child_process";
+import { promisify } from "util";
+import os from "os";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const execAsync = promisify(exec);
 
 // Encryption Utility for sensitive data
 const ENCRYPTION_KEY = (process.env.ENCRYPTION_KEY || 'nexus_forge_encryption_key_32_chars_long_!!!').padEnd(32).slice(0, 32);
@@ -103,57 +108,58 @@ async function startServer() {
 
   // Trust proxy for secure cookies behind reverse proxy
   app.set('trust proxy', 1);
-// MUST be before helmet
-// Set COOP header BEFORE helmet
-app.use((req, res, next) => {
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
-  next();
-});
 
-// Then helmet with COOP disabled so it doesn't override
-app.use(helmet({
-  crossOriginOpenerPolicy: false,        // ✅ Don't let helmet set COOP
-  crossOriginEmbedderPolicy: false,      // ✅ Don't let helmet set COEP
-  crossOriginResourcePolicy: false,
-  contentSecurityPolicy: {
-    directives: {
-      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-      "img-src": ["'self'", "data:", "https:", "http:"],
-      "script-src": [
-        "'self'", "'unsafe-inline'", "'unsafe-eval'",
-        "https://cdn.jsdelivr.net",
-        "https://apis.google.com",
-        "https://*.googleapis.com",
-        "https://*.gstatic.com",
-        "blob:"
-      ],
-      "connect-src": [
-        "'self'",
-        "https://api.github.com",
-        "https://*.googleapis.com",
-        "https://*.firebaseio.com",
-        "https://firestore.googleapis.com",
-        "https://identitytoolkit.googleapis.com",
-        "https://securetoken.googleapis.com",
-        "https://firebase.googleapis.com",
-        "wss:", "ws:", "http:", "https:"
-      ],
-      "frame-src": [
-        "'self'",
-        "https://accounts.google.com",
-        "https://*.firebaseapp.com",
-        "https://vibes-coders.firebaseapp.com"
-      ],
+  // MUST be before helmet
+  // Set COOP header BEFORE helmet
+  app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+    next();
+  });
+
+  // Then helmet with COOP disabled so it doesn't override
+  app.use(helmet({
+    crossOriginOpenerPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        "img-src": ["'self'", "data:", "https:", "http:"],
+        "script-src": [
+          "'self'", "'unsafe-inline'", "'unsafe-eval'",
+          "https://cdn.jsdelivr.net",
+          "https://apis.google.com",
+          "https://*.googleapis.com",
+          "https://*.gstatic.com",
+          "blob:"
+        ],
+        "connect-src": [
+          "'self'",
+          "https://api.github.com",
+          "https://*.googleapis.com",
+          "https://*.firebaseio.com",
+          "https://firestore.googleapis.com",
+          "https://identitytoolkit.googleapis.com",
+          "https://securetoken.googleapis.com",
+          "https://firebase.googleapis.com",
+          "wss:", "ws:", "http:", "https:"
+        ],
+        "frame-src": [
+          "'self'",
+          "https://accounts.google.com",
+          "https://*.firebaseapp.com",
+          "https://vibes-coders.firebaseapp.com"
+        ],
+      },
     },
-  },
-  frameguard: false,
-  referrerPolicy: { policy: "no-referrer-when-downgrade" },
-}));
-  
+    frameguard: false,
+    referrerPolicy: { policy: "no-referrer-when-downgrade" },
+  }));
+
   const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+    windowMs: 15 * 60 * 1000,
+    max: 100,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many requests, please try again later." }
@@ -173,16 +179,17 @@ app.use(helmet({
     }
     next();
   });
+
   app.use(session({
     secret: process.env.SESSION_SECRET || 'nexus_forge_super_secret_2007',
     resave: false,
     saveUninitialized: false,
-   cookie: {
-  secure: process.env.NODE_ENV === 'production',  // only secure in prod
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-  httpOnly: true,
-  maxAge: 24 * 60 * 60 * 1000
-}
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000
+    }
   }));
 
   // Auth Routes
@@ -200,114 +207,108 @@ app.use(helmet({
     });
   });
 
-// GitHub OAuth
-app.get("/api/auth/github/url", (req, res) => {
-  if (!process.env.GITHUB_CLIENT_ID) {
-    return res.status(500).json({ error: "GITHUB_CLIENT_ID is not configured" });
-  }
-
-  const origin = (req.query.origin as string)?.replace(/\/$/, "");
-  if (!origin) return res.status(400).json({ error: "Origin is required" });
-
-  const redirectUri = process.env.GITHUB_REDIRECT_URI;
-  if (!redirectUri) {
-    return res.status(500).json({ error: "GITHUB_REDIRECT_URI is not configured" });
-  }
-
-  // ✅ Pass origin via state instead of session
-  const state = Buffer.from(origin).toString('base64');
-  const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo%20user:email&state=${state}`;
-  res.json({ url });
-});
-
-app.get("/api/auth/github/callback", async (req, res) => {
-  // ✅ Override COOP for this specific route
-  res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
-  const { code, state } = req.query;
-
-  // ✅ Recover origin from state param
-  const origin = state
-    ? Buffer.from(state as string, 'base64').toString('utf8')
-    : null;
-
-  if (!code) return res.status(400).send("Code is required");
-  if (!origin) return res.status(400).send("Invalid state parameter");
-
-  try {
-    const tokenResponse = await axios.post(
-      "https://github.com/login/oauth/access_token",
-      {
-        client_id: process.env.GITHUB_CLIENT_ID,
-        client_secret: process.env.GITHUB_CLIENT_SECRET,
-        code,
-        redirect_uri: process.env.GITHUB_REDIRECT_URI, // ✅ fixed URI
-      },
-      { headers: { Accept: "application/json" } }
-    );
-
-    const accessToken = tokenResponse.data.access_token;
-    if (!accessToken) throw new Error("No access token returned");
-
-    const userResponse = await axios.get("https://api.github.com/user", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const githubUser = userResponse.data;
-
-    // Get email if not public
-    let email = githubUser.email;
-    if (!email) {
-      const emailsResponse = await axios.get("https://api.github.com/user/emails", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      email =
-        emailsResponse.data.find((e: any) => e.primary && e.verified)?.email ||
-        emailsResponse.data[0]?.email;
+  // GitHub OAuth
+  app.get("/api/auth/github/url", (req, res) => {
+    if (!process.env.GITHUB_CLIENT_ID) {
+      return res.status(500).json({ error: "GITHUB_CLIENT_ID is not configured" });
     }
 
-    const user = {
-      id: `github:${githubUser.id}`,
-      name: githubUser.name || githubUser.login,
-      email,
-      avatar_url: githubUser.avatar_url,
-      provider: "github",
-      accessToken,
-    };
+    const origin = (req.query.origin as string)?.replace(/\/$/, "");
+    if (!origin) return res.status(400).json({ error: "Origin is required" });
 
-    db.prepare(`
-      INSERT INTO users (id, name, email, avatar_url, provider)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        email = excluded.email,
-        avatar_url = excluded.avatar_url
-    `).run(user.id, user.name, user.email, user.avatar_url, user.provider);
+    const redirectUri = process.env.GITHUB_REDIRECT_URI;
+    if (!redirectUri) {
+      return res.status(500).json({ error: "GITHUB_REDIRECT_URI is not configured" });
+    }
 
-    (req.session as any).user = user;
+    const state = Buffer.from(origin).toString('base64');
+    const url = `https://github.com/login/oauth/authorize?client_id=${process.env.GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=repo%20user:email&state=${state}`;
+    res.json({ url });
+  });
 
-    // ✅ Target specific origin in postMessage
-    res.send(`
-      <html><body><script>
-        window.opener.postMessage(
-          { type: 'AUTH_SUCCESS', user: ${JSON.stringify(user)} },
-          '${origin}'
-        );
-        window.close();
-      </script></body></html>
-    `);
-  } catch (err: any) {
-    console.error("GitHub Auth Error:", err.response?.data || err.message);
-    res.send(`
-      <html><body><script>
-        window.opener.postMessage(
-          { type: 'AUTH_ERROR', error: 'Authentication failed' },
-          '${origin}'
-        );
-        window.close();
-      </script></body></html>
-    `);
-  }
-});
-   
+  app.get("/api/auth/github/callback", async (req, res) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
+    const { code, state } = req.query;
+
+    const origin = state
+      ? Buffer.from(state as string, 'base64').toString('utf8')
+      : null;
+
+    if (!code) return res.status(400).send("Code is required");
+    if (!origin) return res.status(400).send("Invalid state parameter");
+
+    try {
+      const tokenResponse = await axios.post(
+        "https://github.com/login/oauth/access_token",
+        {
+          client_id: process.env.GITHUB_CLIENT_ID,
+          client_secret: process.env.GITHUB_CLIENT_SECRET,
+          code,
+          redirect_uri: process.env.GITHUB_REDIRECT_URI,
+        },
+        { headers: { Accept: "application/json" } }
+      );
+
+      const accessToken = tokenResponse.data.access_token;
+      if (!accessToken) throw new Error("No access token returned");
+
+      const userResponse = await axios.get("https://api.github.com/user", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const githubUser = userResponse.data;
+
+      let email = githubUser.email;
+      if (!email) {
+        const emailsResponse = await axios.get("https://api.github.com/user/emails", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        email =
+          emailsResponse.data.find((e: any) => e.primary && e.verified)?.email ||
+          emailsResponse.data[0]?.email;
+      }
+
+      const user = {
+        id: `github:${githubUser.id}`,
+        name: githubUser.name || githubUser.login,
+        email,
+        avatar_url: githubUser.avatar_url,
+        provider: "github",
+        accessToken,
+      };
+
+      db.prepare(`
+        INSERT INTO users (id, name, email, avatar_url, provider)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          email = excluded.email,
+          avatar_url = excluded.avatar_url
+      `).run(user.id, user.name, user.email, user.avatar_url, user.provider);
+
+      (req.session as any).user = user;
+
+      res.send(`
+        <html><body><script>
+          window.opener.postMessage(
+            { type: 'AUTH_SUCCESS', user: ${JSON.stringify(user)} },
+            '${origin}'
+          );
+          window.close();
+        </script></body></html>
+      `);
+    } catch (err: any) {
+      console.error("GitHub Auth Error:", err.response?.data || err.message);
+      res.send(`
+        <html><body><script>
+          window.opener.postMessage(
+            { type: 'AUTH_ERROR', error: 'Authentication failed' },
+            '${origin}'
+          );
+          window.close();
+        </script></body></html>
+      `);
+    }
+  });
 
   // Google OAuth
   app.get("/api/auth/google/url", (req, res) => {
@@ -317,7 +318,6 @@ app.get("/api/auth/github/callback", async (req, res) => {
     let origin = req.query.origin as string;
     if (!origin) return res.status(400).json({ error: "Origin is required" });
 
-    // Normalize origin: remove trailing slash
     origin = origin.replace(/\/$/, "");
 
     (req.session as any).authOrigin = origin;
@@ -392,7 +392,7 @@ app.get("/api/auth/github/callback", async (req, res) => {
 
   app.post("/api/keys", (req, res) => {
     if (!req.session || !(req.session as any).user) return res.status(401).json({ error: "Unauthorized" });
-    
+
     const validation = keySchema.safeParse(req.body);
     if (!validation.success) return res.status(400).json({ error: "Invalid input", details: validation.error.format() });
 
@@ -423,7 +423,7 @@ app.get("/api/auth/github/callback", async (req, res) => {
   });
 
   // Real-time Collaboration State
-  const projectState = {
+  const projectState: { files: Record<string, any>; cursors: Record<string, any> } = {
     files: {},
     cursors: {}
   };
@@ -431,7 +431,6 @@ app.get("/api/auth/github/callback", async (req, res) => {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    // Send initial state
     socket.emit("init", projectState);
 
     socket.on("file:update", ({ fileId, code }) => {
@@ -477,7 +476,7 @@ app.get("/api/auth/github/callback", async (req, res) => {
 
   app.post("/api/vercel/projects", (req, res) => {
     const userId = (req.session && (req.session as any).user) ? (req.session as any).user.id : 'guest';
-    
+
     const validation = vercelProjectSchema.safeParse(req.body);
     if (!validation.success) return res.status(400).json({ error: "Invalid input", details: validation.error.format() });
 
@@ -505,11 +504,10 @@ app.get("/api/auth/github/callback", async (req, res) => {
   app.post("/api/vercel/deployments", async (req, res) => {
     const { project_id } = req.body;
     const deployment_id = `dep-${Math.random().toString(36).substring(2, 9)}`;
-    
+
     try {
       db.prepare("INSERT INTO vercel_deployments (id, project_id, status, logs) VALUES (?, ?, ?, ?)").run(deployment_id, project_id, 'BUILDING', '');
-      
-      // Start simulated build process
+
       const steps = [
         "Cloning repository...",
         "Resolving dependencies...",
@@ -522,16 +520,14 @@ app.get("/api/auth/github/callback", async (req, res) => {
       let currentLogs = "";
       res.json({ success: true, deployment_id });
 
-      // Simulate build logs over time
       (async () => {
         for (let i = 0; i < steps.length; i++) {
           await new Promise(resolve => setTimeout(resolve, 1500 + Math.random() * 2000));
           const logLine = `[${new Date().toLocaleTimeString()}] ${steps[i]}\n`;
           currentLogs += logLine;
-          
-          // Emit log to all clients (in a real app, we'd scope this to the user/project)
+
           io.emit(`vercel:logs:${deployment_id}`, { log: logLine });
-          
+
           if (i === steps.length - 1) {
             db.prepare("UPDATE vercel_deployments SET status = ?, logs = ? WHERE id = ?").run('READY', currentLogs, deployment_id);
             io.emit(`vercel:status:${deployment_id}`, { status: 'READY' });
@@ -607,6 +603,78 @@ app.get("/api/auth/github/callback", async (req, res) => {
     }
   });
 
+  // ─── Code Execution Endpoint ───────────────────────────────────────────────
+  app.post("/api/execute", async (req, res) => {
+    const { code, language } = req.body;
+
+    if (!code) return res.status(400).json({ error: "No code provided" });
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nexus-"));
+
+    try {
+      let filename = "";
+      let runCommand = "";
+
+      switch (language) {
+        case "python":
+          filename = path.join(tmpDir, "main.py");
+          fs.writeFileSync(filename, code);
+          runCommand = `timeout 10 python3 "${filename}"`;
+          break;
+        case "javascript":
+        case "typescript":
+          filename = path.join(tmpDir, "main.js");
+          fs.writeFileSync(filename, code);
+          runCommand = `timeout 10 node "${filename}"`;
+          break;
+        case "cpp":
+          filename = path.join(tmpDir, "main.cpp");
+          const outFile = path.join(tmpDir, "main");
+          fs.writeFileSync(filename, code);
+          runCommand = `g++ -o "${outFile}" "${filename}" && timeout 10 "${outFile}"`;
+          break;
+        case "java":
+          filename = path.join(tmpDir, "Main.java");
+          fs.writeFileSync(filename, code);
+          runCommand = `cd "${tmpDir}" && javac Main.java && timeout 10 java Main`;
+          break;
+        case "c":
+          filename = path.join(tmpDir, "main.c");
+          const cOut = path.join(tmpDir, "main");
+          fs.writeFileSync(filename, code);
+          runCommand = `gcc -o "${cOut}" "${filename}" && timeout 10 "${cOut}"`;
+          break;
+        default:
+          return res.status(400).json({ error: `Language ${language} not supported for execution` });
+      }
+
+      const { stdout, stderr } = await execAsync(runCommand, {
+        timeout: 15000,
+        maxBuffer: 1024 * 1024, // 1MB output limit
+      });
+
+      res.json({
+        success: true,
+        output: stdout || "",
+        error: stderr || "",
+        language,
+      });
+
+    } catch (err: any) {
+      res.json({
+        success: false,
+        output: "",
+        error: err.stderr || err.message || "Execution failed",
+        language,
+      });
+    } finally {
+      try {
+        fs.rmSync(tmpDir, { recursive: true });
+      } catch {}
+    }
+  });
+  // ──────────────────────────────────────────────────────────────────────────
+
   // Vite middleware for development
   const isProduction = process.env.NODE_ENV === "production";
   const distPath = path.join(__dirname, "dist");
@@ -630,7 +698,7 @@ app.get("/api/auth/github/callback", async (req, res) => {
         res.sendFile(path.join(distPath, "index.html"));
       });
     } else {
-      console.warn("[Nexus Forge] Production mode detected but 'dist' directory is missing! Falling back to root index.html (this may not work as expected).");
+      console.warn("[Nexus Forge] Production mode detected but 'dist' directory is missing! Falling back to root index.html.");
       app.use(express.static(__dirname));
       app.get("*", (req, res) => {
         res.sendFile(path.join(__dirname, "index.html"));
@@ -638,9 +706,9 @@ app.get("/api/auth/github/callback", async (req, res) => {
     }
   }
 
- httpServer.listen(Number(PORT), "0.0.0.0", () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+  httpServer.listen(Number(PORT), "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 }
 
 startServer().catch(err => {
