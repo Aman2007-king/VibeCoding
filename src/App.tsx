@@ -5260,8 +5260,13 @@ const handleSignIn = () => {
                 )}
 
      {activeTab === 'command' && (
-  <motion.div key="terminal-content" ...>
-    <div className="flex items-center gap-2 px-4 py-2 bg-white/5 border-b border-white/5">
+       <motion.div
+  key="terminal-content"
+  initial={{ opacity: 0 }}
+  animate={{ opacity: 1 }}
+  className="h-full flex flex-col bg-black/40 rounded-2xl border border-white/10 overflow-hidden font-mono"
+>
+            <div className="flex items-center gap-2 px-4 py-2 bg-white/5 border-b border-white/5">
       <Terminal className="w-3 h-3 opacity-50" />
       <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Terminal</span>
       <button 
