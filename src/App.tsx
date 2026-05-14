@@ -5316,7 +5316,6 @@ const handleSignIn = () => {
     </div>
   </motion.div>
 )}
-                )}
               </AnimatePresence>
             </div>
 
