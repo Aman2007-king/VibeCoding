@@ -715,7 +715,6 @@ app.use((req, res, next) => {
   httpServer.listen(Number(PORT), "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
-}
 
 startServer().catch(err => {
   console.error("Failed to start server:", err);
