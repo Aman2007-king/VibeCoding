@@ -311,106 +311,7 @@ const THEMES: Theme[] = [
 // Memoized Sub-components for performance
 const FileItem = memo(({ file, isActive, onSelect, onRename, onDelete, onToggleFolder, onDragStart, onDragOver, onDrop }: any) => {
   const isFolder = file.type === 'folder';
-  
-  return (
-    <div 
-      draggable
-      onDragStart={(e) => onDragStart(e, file.id)}
-      onDragOver={(e) => onDragOver(e)}
-      onDrop={(e) => onDrop(e, file.id)}
-      className={cn(
-        "group flex flex-col cursor-pointer transition-colors relative",
-        isActive && !isFolder ? "bg-accent/10 text-accent" : "hover:bg-white/5 text-text-secondary"
-      )}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (isFolder) {
-          onToggleFolder(file.id);
-        } else {
-          onSelect(file.id);
-        }
-      }}
-    >
-      <div className="flex items-center px-4 py-1.5">
-        {isFolder ? (
-          <Folder className={cn("w-3.5 h-3.5 mr-2 transition-transform", file.isOpen ? "text-accent" : "opacity-50")} />
-        ) : (
-          <FileCode className="w-3.5 h-3.5 mr-2 opacity-50" />
-        )}
-        <input 
-          id={`file-name-${file.id}`}
-          name={`file-name-${file.id}`}
-          value={file.name}
-          onChange={(e) => onRename(file.id, e.target.value)}
-          className="bg-transparent border-none text-xs focus:ring-0 p-0 w-full"
-          onClick={(e) => e.stopPropagation()}
-        />
-        <button 
-          onClick={(e) => { e.stopPropagation(); onDelete(file.id); }}
-          className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
-      </div>
-    </div>
-  );
-});
 
-const SidebarButton = memo(({ icon: Icon, active, onClick, title, className }: any) => (
-  <button 
-    onClick={onClick}
-    className={cn("p-2 rounded-lg transition-colors", active ? "bg-white/10 text-white" : "hover:bg-white/5", className)}
-    title={title}
-  >
-    <Icon className="w-5 h-5" />
-  </button>
-));
-
-const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, depth?: number }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const isObject = typeof value === 'object' && value !== null;
-  const isArray = Array.isArray(value);
-  
-  return (
-    <div className={cn(
-      "flex flex-col gap-1 text-[11px] font-mono group border-b border-white/5 pb-2 last:border-0",
-      depth > 0 && "ml-3 border-l border-white/10 pl-2"
-    )}>
-      <div className="flex items-center gap-2">
-        {isObject && Object.keys(value).length > 0 && (
-          <button 
-            onClick={() => setIsOpen(!isOpen)} 
-            className="p-0.5 hover:bg-white/10 rounded text-accent transition-colors"
-          >
-            {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          </button>
-        )}
-        <span className="text-blue-400 shrink-0 font-bold">{name}:</span>
-        <span className="text-zinc-500 text-[9px] italic">
-          ({isArray ? `Array(${value.length})` : typeof value})
-        </span>
-        {!isObject && (
-          <span className={cn(
-            "truncate",
-            typeof value === 'string' ? "text-green-400" : 
-            typeof value === 'number' ? "text-orange-400" : 
-            typeof value === 'boolean' ? "text-purple-400" : "text-text-secondary"
-          )}>
-            {typeof value === 'string' ? `"${value}"` : String(value)}
-          </span>
-        )}
-      </div>
-      {isObject && isOpen && (
-        <div className="space-y-1 mt-1">
-          {Object.entries(value).map(([k, v]) => (
-            <VariableItem key={k} name={k} value={v} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-  
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (file.type === 'file') {
@@ -427,7 +328,7 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
   };
 
   return (
-    <div 
+    <div
       draggable
       onDragStart={(e) => onDragStart(e, file.id)}
       onDragOver={(e) => onDragOver(e)}
@@ -448,7 +349,7 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
         ) : (
           <FileCode className="w-3.5 h-3.5 mr-2 opacity-50" />
         )}
-        <input 
+        <input
           id={`file-name-${file.id}`}
           name={`file-name-${file.id}`}
           value={file.name}
@@ -457,7 +358,6 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
           onClick={(e) => e.stopPropagation()}
         />
         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-          {/* ✅ Download button per file */}
           {!isFolder && (
             <button
               onClick={handleDownload}
@@ -467,7 +367,7 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
               <Download className="w-3 h-3" />
             </button>
           )}
-          <button 
+          <button
             onClick={(e) => { e.stopPropagation(); onDelete(file.id); }}
             className="p-1 hover:text-red-400 transition-colors"
           >
@@ -478,6 +378,62 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
     </div>
   );
 });
+
+const SidebarButton = memo(({ icon: Icon, active, onClick, title, className }: any) => (
+  <button
+    onClick={onClick}
+    className={cn("p-2 rounded-lg transition-colors", active ? "bg-white/10 text-white" : "hover:bg-white/5", className)}
+    title={title}
+  >
+    <Icon className="w-5 h-5" />
+  </button>
+));
+
+const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, depth?: number }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const isObject = typeof value === 'object' && value !== null;
+  const isArray = Array.isArray(value);
+
+  return (
+    <div className={cn(
+      "flex flex-col gap-1 text-[11px] font-mono group border-b border-white/5 pb-2 last:border-0",
+      depth > 0 && "ml-3 border-l border-white/10 pl-2"
+    )}>
+      <div className="flex items-center gap-2">
+        {isObject && Object.keys(value).length > 0 && (
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="p-0.5 hover:bg-white/10 rounded text-accent transition-colors"
+          >
+            {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+        )}
+        <span className="text-blue-400 shrink-0 font-bold">{name}:</span>
+        <span className="text-zinc-500 text-[9px] italic">
+          ({isArray ? `Array(${value.length})` : typeof value})
+        </span>
+        {!isObject && (
+          <span className={cn(
+            "truncate",
+            typeof value === 'string' ? "text-green-400" :
+            typeof value === 'number' ? "text-orange-400" :
+            typeof value === 'boolean' ? "text-purple-400" : "text-text-secondary"
+          )}>
+            {typeof value === 'string' ? `"${value}"` : String(value)}
+          </span>
+        )}
+      </div>
+      {isObject && isOpen && (
+        <div className="space-y-1 mt-1">
+          {Object.entries(value).map(([k, v]) => (
+            <VariableItem key={k} name={k} value={v} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+  // ... rest of your App component
 function App() {
   console.log("App component rendering...");
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
