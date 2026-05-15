@@ -433,7 +433,6 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
     </div>
   );
 };
-  // ... rest of your App component
 function App() {
   console.log("App component rendering...");
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -752,6 +751,19 @@ const handleSignIn = () => {
   const [testResults, setTestResults] = useState<{ name: string, status: 'pass' | 'fail' | 'pending', error?: string }[]>([]);
   const [docsContent, setDocsContent] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const activeFile = useMemo(() => files.find(f => f.id === activeFileId) || files[0] || { id: 0, name: '', code: '', language: 'javascript', type: 'file', parentId: null }, [files, activeFileId]);
+
+  const updateFile = useCallback((id: number, updates: Partial<FileState>) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  }, []);
+
+  const buildProjectContext = useCallback(() => {
+    return files
+      .filter(f => f.type === 'file' && f.code)
+      .map(f => `=== ${f.name} (${f.language}) ===\n${f.code.substring(0, 1000)}`)
+      .join('\n\n');
+  }, [files]);
+  
   const searchNpm = async (query: string) => {
     if (!query) return;
     setIsSearchingNpm(true);
@@ -1897,12 +1909,6 @@ const handleUploadFile = useCallback(() => {
       setIsGenerating(false);
     }
   };
-
-  const activeFile = useMemo(() => files.find(f => f.id === activeFileId) || files[0] || { id: 0, name: '', code: '', language: 'javascript', type: 'file', parentId: null }, [files, activeFileId]);
-
-  const updateFile = useCallback((id: number, updates: Partial<FileState>) => {
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
-  }, []);
 
   const toggleBreakpoint = useCallback((fileId: number, line: number) => {
     setBreakpoints(prev => {
