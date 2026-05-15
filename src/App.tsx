@@ -410,8 +410,6 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
     </div>
   );
 };
-const FileItem = memo(({ file, isActive, onSelect, onRename, onDelete, onToggleFolder, onDragStart, onDragOver, onDrop, onDownload }: any) => {
-  const isFolder = file.type === 'folder';
   
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
