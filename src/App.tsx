@@ -76,7 +76,9 @@ import {
   Server,
   FileText,
   Lock,
-  Cpu
+  Cpu,
+  Upload,
+  Download,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Markdown from 'react-markdown';
@@ -408,7 +410,76 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
     </div>
   );
 };
+const FileItem = memo(({ file, isActive, onSelect, onRename, onDelete, onToggleFolder, onDragStart, onDragOver, onDrop, onDownload }: any) => {
+  const isFolder = file.type === 'folder';
+  
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (file.type === 'file') {
+      const blob = new Blob([file.code], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
 
+  return (
+    <div 
+      draggable
+      onDragStart={(e) => onDragStart(e, file.id)}
+      onDragOver={(e) => onDragOver(e)}
+      onDrop={(e) => onDrop(e, file.id)}
+      className={cn(
+        "group flex flex-col cursor-pointer transition-colors relative",
+        isActive && !isFolder ? "bg-accent/10 text-accent" : "hover:bg-white/5 text-text-secondary"
+      )}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isFolder) onToggleFolder(file.id);
+        else onSelect(file.id);
+      }}
+    >
+      <div className="flex items-center px-4 py-1.5">
+        {isFolder ? (
+          <Folder className={cn("w-3.5 h-3.5 mr-2", file.isOpen ? "text-accent" : "opacity-50")} />
+        ) : (
+          <FileCode className="w-3.5 h-3.5 mr-2 opacity-50" />
+        )}
+        <input 
+          id={`file-name-${file.id}`}
+          name={`file-name-${file.id}`}
+          value={file.name}
+          onChange={(e) => onRename(file.id, e.target.value)}
+          className="bg-transparent border-none text-xs focus:ring-0 p-0 w-full"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+          {/* ✅ Download button per file */}
+          {!isFolder && (
+            <button
+              onClick={handleDownload}
+              className="p-1 hover:text-accent transition-colors"
+              title="Download file"
+            >
+              <Download className="w-3 h-3" />
+            </button>
+          )}
+          <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(file.id); }}
+            className="p-1 hover:text-red-400 transition-colors"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
 function App() {
   console.log("App component rendering...");
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -1519,6 +1590,110 @@ When suggesting changes, always mention which file to edit. When you see bugs, c
     }
   }, []);
 
+// ✅ Download all project files as ZIP
+const handleDownloadProject = useCallback(async () => {
+  if (files.length === 0) {
+    showToast('No files to download', 'error');
+    return;
+  }
+
+  try {
+    // Dynamically import JSZip
+    const JSZip = (await import('jszip')).default;
+    const zip = new JSZip();
+
+    // Add all files to zip
+    files.forEach(file => {
+      if (file.type === 'file') {
+        // Preserve folder structure
+        const filePath = getFilePath(file);
+        zip.file(filePath, file.code);
+      }
+    });
+
+    // Generate and download
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'nexus-project.zip';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('Project downloaded as ZIP!', 'success');
+    confetti({ particleCount: 60, spread: 70 });
+  } catch (err) {
+    console.error('Download error:', err);
+    showToast('Download failed', 'error');
+  }
+}, [files]);
+
+// Helper to get full file path including parent folders
+const getFilePath = useCallback((file: FileState): string => {
+  if (!file.parentId) return file.name;
+  const parent = files.find(f => f.id === file.parentId);
+  if (!parent) return file.name;
+  return `${getFilePath(parent)}/${file.name}`;
+}, [files]);
+
+// ✅ Download single active file
+const handleDownloadFile = useCallback(() => {
+  if (!activeFile || !activeFile.code) {
+    showToast('No file to download', 'error');
+    return;
+  }
+
+  const blob = new Blob([activeFile.code], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = activeFile.name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(`Downloaded ${activeFile.name}!`, 'success');
+}, [activeFile]);
+
+// ✅ Upload file from computer
+const handleUploadFile = useCallback(() => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = '.js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.go,.rs,.rb,.php,.cs,.html,.css,.json,.md,.yaml,.yml,.txt,.sql,.sh';
+  
+  input.onchange = async (e) => {
+    const fileList = (e.target as HTMLInputElement).files;
+    if (!fileList) return;
+
+    const newFiles: FileState[] = [];
+    
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const text = await file.text();
+      const newId = Math.max(...files.map(f => f.id), 0) + i + 1;
+      
+      newFiles.push({
+        id: newId,
+        name: file.name,
+        code: text,
+        language: getLanguageFromFilename(file.name),
+        type: 'file',
+        parentId: null
+      });
+    }
+
+    setFiles(prev => [...prev, ...newFiles]);
+    if (newFiles.length > 0) setActiveFileId(newFiles[0].id);
+    showToast(`Uploaded ${newFiles.length} file(s)!`, 'success');
+    confetti({ particleCount: 40, spread: 60 });
+  };
+
+  input.click();
+}, [files]);
   const handleImportRepo = async () => {
     if (!githubToken || !selectedRepo) return;
     
@@ -3881,6 +4056,37 @@ const handleExecuteCode = async () => {
 >
   {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
   <span className="hidden sm:inline">Execute</span>
+</button>
+            {/* Add these 3 buttons BEFORE the Run Project button */}
+
+{/* Upload File */}
+<button
+  onClick={handleUploadFile}
+  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white hover:bg-white/20 transition-all"
+  title="Upload files from computer"
+>
+  <Upload className="w-3.5 h-3.5" />
+  <span className="hidden sm:inline">Upload</span>
+</button>
+
+{/* Download Current File */}
+<button
+  onClick={handleDownloadFile}
+  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white hover:bg-white/20 transition-all"
+  title="Download current file"
+>
+  <Download className="w-3.5 h-3.5" />
+  <span className="hidden sm:inline">Save File</span>
+</button>
+
+{/* Download All as ZIP */}
+<button
+  onClick={handleDownloadProject}
+  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white hover:bg-white/20 transition-all"
+  title="Download all files as ZIP"
+>
+  <Download className="w-3.5 h-3.5" />
+  <span className="hidden sm:inline">Export ZIP</span>
 </button>
             <button 
               onClick={handleRun}
