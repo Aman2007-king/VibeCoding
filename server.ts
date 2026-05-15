@@ -645,29 +645,42 @@ if (!jdoodleLang) {
 }
 
     try {
-      const response = await axios.post(
-        'https://api.jdoodle.com/v1/execute',
-        {
-          script: code,
-          language: jdoodleLang.language,
-          versionIndex: jdoodleLang.versionIndex,
-          clientId: process.env.JDOODLE_CLIENT_ID || "your_client_id",
-          clientSecret: process.env.JDOODLE_CLIENT_SECRET || "your_client_secret",
-        },
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 30000
-        }
-      );
+  const response = await axios.post(
+    'https://api.jdoodle.com/v1/execute',
+    {
+      script: code,
+      language: jdoodleLang.language,
+      versionIndex: jdoodleLang.versionIndex,
+      clientId: process.env.JDOODLE_CLIENT_ID || "your_client_id",
+      clientSecret: process.env.JDOODLE_CLIENT_SECRET || "your_client_secret",
+    },
+    {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    }
+  );
 
-      const result = response.data;
-      const output = result.output || '';
+  const result = response.data;
+  const output = result.output || '';
 
-     return res.json({
-  success: result.statusCode === 200,
-  output: result.statusCode === 200 ? output : '',
-  error: result.statusCode !== 200 ? output : '',
-  language: finalLanguage,
+  return res.json({
+    success: true,
+    output: output,
+    error: result.error || '',
+    language: finalLanguage,
+    via: 'JDoodle'
+  });
+
+} catch (err: any) {
+  console.error('JDoodle error:', err.response?.data || err.message);
+  return res.status(200).json({
+    success: false,
+    output: '',
+    error: err.response?.data?.error || err.message || 'Execution failed',
+    language: finalLanguage
+  });
+}
+     
   via: 'JDoodle'
 });
 
