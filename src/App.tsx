@@ -2399,10 +2399,10 @@ const handleExecuteCode = async () => {
   };
 
   const detectedLanguage = getLanguageFromFile(activeFile.name);
-  const executableLanguages = ['python', 'javascript', 'java', 'cpp', 'c', 'go', 'ruby', 'php', 'bash', 'rust'];
+  const executableLanguages = ['python', 'javascript', 'typescript', 'java', 'cpp', 'c', 'go', 'ruby', 'php', 'bash', 'rust', 'swift', 'kotlin', 'csharp', 'r', 'shell'];
 
   if (!executableLanguages.includes(detectedLanguage)) {
-    showToast(`${activeFile.name}: not executable. Supported: Python, JS, Java, C, C++`, 'error');
+    showToast(`${activeFile.name}: language not supported for execution.`, 'error');
     return;
   }
 
