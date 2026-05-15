@@ -607,92 +607,106 @@ app.use((req, res, next) => {
   });
 
 // ─── Code Execution Endpoint ───────────────────────────────────────────────
-  app.post("/api/execute", async (req, res) => {
-    const { code, language, filename } = req.body;
 
-// Auto-detect language from filename if language is wrong
-const extToLang: Record<string, string> = {
-  '.py': 'python',
-  '.js': 'javascript', 
-  '.ts': 'typescript',
-  '.cpp': 'cpp',
-  '.c': 'c',
-  '.java': 'java',
-  '.go': 'go',
-  '.rs': 'rust',
-  '.rb': 'ruby',
-  '.php': 'php',
-  '.cs': 'csharp',
-  '.kt': 'kotlin',
-  '.swift': 'swift',
-  '.r': 'r',
-};
+     app.post("/api/execute", async (req, res) => {
+  const { code, language, filename } = req.body;
+  if (!code) return res.status(400).json({ error: "No code provided" });
 
-const detectedLanguage = filename 
-  ? extToLang[filename.substring(filename.lastIndexOf('.'))] || language
-  : language;
+  // 1. FIRST - detect language from filename
+  const extToLang: Record<string, string> = {
+    '.py': 'python',
+    '.js': 'javascript',
+    '.ts': 'typescript',
+    '.cpp': 'cpp',
+    '.c': 'c',
+    '.java': 'java',
+    '.go': 'go',
+    '.rs': 'rust',
+    '.rb': 'ruby',
+    '.php': 'php',
+    '.cs': 'csharp',
+    '.kt': 'kotlin',
+    '.swift': 'swift',
+    '.r': 'r',
+    '.sh': 'shell',
+  };
 
-const finalLanguage = detectedLanguage;
+  const detectedLanguage = filename
+    ? extToLang[filename.substring(filename.lastIndexOf('.'))] || language
+    : language;
 
-   const jdoodleLang = jdoodleLanguage[finalLanguage];
-if (!jdoodleLang) {
-  return res.json({
-    success: false,
-    output: '',
-    error: `Language "${finalLanguage}" is not supported.`,
-    language: finalLanguage
-  });
-}
+  const finalLanguage = detectedLanguage;
 
-    try {
-  const response = await axios.post(
-    'https://api.jdoodle.com/v1/execute',
-    {
-      script: code,
-      language: jdoodleLang.language,
-      versionIndex: jdoodleLang.versionIndex,
-      clientId: process.env.JDOODLE_CLIENT_ID || "your_client_id",
-      clientSecret: process.env.JDOODLE_CLIENT_SECRET || "your_client_secret",
-    },
-    {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
-    }
-  );
+  // 2. SECOND - define jdoodle map
+  const jdoodleLanguage: Record<string, { language: string, versionIndex: string }> = {
+    'cpp':        { language: 'cpp17',      versionIndex: '0' },
+    'c':          { language: 'c',          versionIndex: '5' },
+    'java':       { language: 'java',       versionIndex: '4' },
+    'python':     { language: 'python3',    versionIndex: '4' },
+    'javascript': { language: 'nodejs',     versionIndex: '4' },
+    'typescript': { language: 'typescript', versionIndex: '1' },
+    'go':         { language: 'go',         versionIndex: '4' },
+    'rust':       { language: 'rust',       versionIndex: '4' },
+    'ruby':       { language: 'ruby',       versionIndex: '4' },
+    'php':        { language: 'php',        versionIndex: '4' },
+    'csharp':     { language: 'csharp',     versionIndex: '4' },
+    'kotlin':     { language: 'kotlin',     versionIndex: '3' },
+    'swift':      { language: 'swift',      versionIndex: '4' },
+    'r':          { language: 'r',          versionIndex: '4' },
+    'shell':      { language: 'bash',       versionIndex: '4' },
+  };
 
-  const result = response.data;
-  const output = result.output || '';
+  // 3. THIRD - look up the language
+  const jdoodleLang = jdoodleLanguage[finalLanguage];
+  if (!jdoodleLang) {
+    return res.json({
+      success: false,
+      output: '',
+      error: `Language "${finalLanguage}" is not supported.`,
+      language: finalLanguage
+    });
+  }
 
-  return res.json({
-    success: true,
-    output: output,
-    error: result.error || '',
-    language: finalLanguage,
-    via: 'JDoodle'
-  });
+  // 4. FOURTH - call JDoodle API
+  try {
+    const response = await axios.post(
+      'https://api.jdoodle.com/v1/execute',
+      {
+        script: code,
+        language: jdoodleLang.language,
+        versionIndex: jdoodleLang.versionIndex,
+        clientId: process.env.JDOODLE_CLIENT_ID || "your_client_id",
+        clientSecret: process.env.JDOODLE_CLIENT_SECRET || "your_client_secret",
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 30000
+      }
+    );
 
-} catch (err: any) {
-  console.error('JDoodle error:', err.response?.data || err.message);
-  return res.status(200).json({
-    success: false,
-    output: '',
-    error: err.response?.data?.error || err.message || 'Execution failed',
-    language: finalLanguage
-  });
-}
-     
-  via: 'JDoodle'
+    const result = response.data;
+    const output = result.output || '';
+
+    return res.json({
+      success: true,
+      output: output,
+      error: result.error || '',
+      language: finalLanguage,
+      via: 'JDoodle'
+    });
+
+  } catch (err: any) {
+    console.error('JDoodle error:', err.response?.data || err.message);
+    return res.status(200).json({
+      success: false,
+      output: '',
+      error: err.response?.data?.error || err.message || 'Execution failed',
+      language: finalLanguage
+    });
+  }
 });
 
-    } catch (err: any) {
-      return res.json({
-        success: false,
-        output: '',
-        error: err.response?.data?.error || err.message || 'Execution failed',
-        language
-      });
-    }
-  });
+
   // ──────────────────────────────────────────────────────────────────────────
   // Vite middleware for development
   const isProduction = process.env.NODE_ENV === "production";
