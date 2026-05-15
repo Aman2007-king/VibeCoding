@@ -477,7 +477,7 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
       </div>
     </div>
   );
-);
+});
 function App() {
   console.log("App component rendering...");
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
