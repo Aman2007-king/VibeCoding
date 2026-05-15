@@ -215,7 +215,14 @@ const getLanguageFromFilename = (filename: string): string => {
     'yml': 'yaml',
     'xml': 'xml',
     'scss': 'scss',
-    'less': 'less'
+    'less': 'less',
+    'cs': 'csharp',
+    'kt': 'kotlin',
+    'swift': 'swift',
+    'r': 'r',
+    'rb': 'ruby',
+    'c': 'c',
+    'sh': 'shell',
   };
   return mapping[ext] || 'javascript';
 };
