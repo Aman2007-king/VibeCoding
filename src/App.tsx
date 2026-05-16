@@ -601,55 +601,6 @@ useEffect(() => {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // ✅ Auto-save project to Firestore every 30 seconds
-useEffect(() => {
-  if (!currentUser || files.length === 0) return;
-
-  const autoSave = setInterval(async () => {
-    try {
-      const projectRef = doc(db, 'projects', `${currentUser.uid}-default`);
-      await setDoc(projectRef, {
-        id: `${currentUser.uid}-default`,
-        ownerId: currentUser.uid,
-        name: 'My Nexus Project',
-        files: files,
-        activeFileId: activeFileId,
-        updatedAt: Timestamp.now(),
-      }, { merge: true });
-      console.log('[AutoSave] Project saved to cloud');
-    } catch (err) {
-      console.error('[AutoSave] Failed:', err);
-    }
-  }, 30000); // every 30 seconds
-
-  return () => clearInterval(autoSave);
-}, [currentUser, files, activeFileId]);
-
-// ✅ Load project from Firestore on login
-useEffect(() => {
-  if (!currentUser) return;
-
-  const loadProject = async () => {
-    try {
-      const projectRef = doc(db, 'projects', `${currentUser.uid}-default`);
-      const projectSnap = await getDoc(projectRef);
-
-      if (projectSnap.exists()) {
-        const data = projectSnap.data();
-        if (data.files && data.files.length > 0) {
-          setFiles(data.files);
-          setActiveFileId(data.activeFileId || data.files[0].id);
-          showToast('Project loaded from cloud ☁️', 'success');
-          console.log('[CloudSync] Project loaded from Firestore');
-        }
-      }
-    } catch (err) {
-      console.error('[CloudSync] Failed to load:', err);
-    }
-  };
-
-  loadProject();
-}, [currentUser]);
   // Firestore Sync: Chat History
   useEffect(() => {
     if (!currentUser) return;
@@ -686,31 +637,28 @@ const handleSignIn = () => {
     }
   };
 
- const saveProjectToFirestore = async () => {
-  if (!currentUser) {
-    showToast("Sign in to save projects", "info");
-    return;
-  }
+  const saveProjectToFirestore = async () => {
+    if (!currentUser) {
+      showToast("Sign in to save projects", "info");
+      return;
+    }
 
-  try {
-    const projectId = `${currentUser.uid}-default`;
-    const projectRef = doc(db, 'projects', projectId);
-    await setDoc(projectRef, {
-      id: projectId,
-      ownerId: currentUser.uid,
-      name: 'My Nexus Project',
-      files: files,
-      activeFileId: activeFileId,
-      updatedAt: Timestamp.now(),
-      createdAt: Timestamp.now(),
-    }, { merge: true });
-    showToast("✅ Project saved to cloud!", "success");
-    confetti({ particleCount: 40, spread: 60 });
-  } catch (err) {
-    console.error('Save error:', err);
-    handleFirestoreError(err, OperationType.WRITE, 'projects');
-  }
-};
+    try {
+      const projectId = "default-project"; // For demo, use a single project
+      const projectRef = doc(db, 'projects', projectId);
+      await setDoc(projectRef, {
+        id: projectId,
+        ownerId: currentUser.uid,
+        name: "My Nexus Project",
+        files: files,
+        updatedAt: Timestamp.now(),
+        createdAt: Timestamp.now() // In real app, check if exists first
+      }, { merge: true });
+      showToast("Project saved to cloud", "success");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'projects/default-project');
+    }
+  };
 
   const saveChatMessageToFirestore = async (role: 'user' | 'assistant', content: string) => {
     if (!currentUser) return;
@@ -3242,22 +3190,15 @@ const handleExecuteCode = async () => {
         <div className="mt-auto flex flex-col gap-6 shrink-0">
           
           <div className="pt-4 border-t border-white/5 flex flex-col items-center gap-4">
-            {currentUser && (
-  <div className="flex flex-col items-center gap-2">
-    <button
-      onClick={saveProjectToFirestore}
-      className="p-2 rounded-lg hover:bg-white/5 text-accent relative group"
-      title="Save to Cloud"
-    >
-      <Database className="w-5 h-5" />
-      {/* Pulse dot showing auto-save is active */}
-      <span className="absolute top-1 right-1 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-      <span className="absolute left-full ml-2 px-2 py-1 bg-bg-secondary border border-white/10 rounded text-[10px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-        Save to Cloud (Auto-saves every 30s)
-      </span>
-    </button>
-  </div>
-)}
+            {currentUser ? (
+              <div className="flex flex-col items-center gap-4">
+                <button 
+                  onClick={saveProjectToFirestore}
+                  className="p-2 rounded-lg hover:bg-white/5 text-accent"
+                  title="Save to Cloud"
+                >
+                  <Database className="w-5 h-5" />
+                </button>
                 <div className="relative group">
                   <img 
                     src={currentUser.photoURL || `https://ui-avatars.com/api/?name=${currentUser.displayName || 'User'}&background=random`} 
