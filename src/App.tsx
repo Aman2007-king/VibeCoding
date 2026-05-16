@@ -4657,73 +4657,141 @@ const handleExecuteCode = async () => {
                     </div>
                   </motion.div>
                 )}
+{activeTab === 'live' && (
+  <motion.div
+    key="live-content"
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="flex-1 flex flex-col items-center justify-start gap-4 p-4 custom-scrollbar overflow-hidden"
+  >
+    {/* Status + Connect Button */}
+    <div className="w-full flex flex-col items-center gap-4">
+      <div className="relative">
+        <div className={cn(
+          "w-20 h-20 rounded-full flex items-center justify-center transition-all duration-500",
+          isLiveActive
+            ? "bg-accent/20 scale-110 shadow-[0_0_40px_var(--accent)]"
+            : "bg-white/5"
+        )}>
+          <Volume2 className={cn(
+            "w-9 h-9",
+            isLiveActive ? "text-accent animate-pulse" : "text-text-secondary"
+          )} />
+        </div>
+        {isLiveActive && (
+          <motion.div
+            animate={{ scale: [1, 1.4, 1], opacity: [0.5, 0, 0.5] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="absolute inset-0 border-2 border-accent rounded-full"
+          />
+        )}
+      </div>
 
-                {activeTab === 'live' && (
-                  <motion.div
-                    key="live-content"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex-1 flex flex-col items-center justify-start gap-6 p-6 custom-scrollbar"
-                  >
-                    <div className="w-full flex flex-col items-center gap-6">
-                      <div className="relative">
-                        <div className={cn(
-                          "w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500",
-                          isLiveActive ? "bg-accent/20 scale-110 shadow-[0_0_50px_var(--accent)]" : "bg-white/5"
-                        )}>
-                          <Volume2 className={cn("w-10 h-10", isLiveActive ? "text-accent animate-pulse" : "text-text-secondary")} />
-                        </div>
-                        {isLiveActive && (
-                          <motion.div 
-                            animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-                            transition={{ duration: 2, repeat: Infinity }}
-                            className="absolute inset-0 border-2 border-accent rounded-full"
-                          />
-                        )}
-                      </div>
-                      <div className="text-center space-y-2">
-                        <h3 className="text-white font-bold tracking-tight">Nexus Live AI</h3>
-                        <p className="text-xs text-zinc-500 max-w-xs">
-                          {isLiveActive ? "Connected. Start talking to Nexus AI for real-time guidance." : "Connect to start a real-time voice conversation with your AI coding companion."}
-                        </p>
-                      </div>
-                      <button 
-                        onClick={startLiveMode}
-                        className={cn(
-                          "px-8 py-3 rounded-full text-xs font-bold transition-all flex items-center gap-2",
-                          isLiveActive ? "bg-red-500 text-white hover:bg-red-600" : "bg-accent text-accent-foreground hover:opacity-90"
-                        )}
-                      >
-                        {isLiveActive ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                        {isLiveActive ? "Disconnect Session" : "Start Live Session"}
-                      </button>
-                    </div>
+      <div className="text-center space-y-1">
+        <h3 className="text-white font-bold">Nexus Live AI</h3>
+        <p className="text-xs text-zinc-500 max-w-xs">
+          {isLiveActive
+            ? "🎤 Listening... Speak naturally to get coding help."
+            : "Connect to start a real-time voice conversation."}
+        </p>
+      </div>
 
-                    {isLiveActive && (
-                      <div className="w-full flex-1 bg-black/20 rounded-2xl border border-white/5 p-4 flex flex-col overflow-hidden">
-                        <div className="flex items-center gap-2 mb-4 opacity-50">
-                          <MessageSquare className="w-3 h-3" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest">Live Transcription</span>
-                        </div>
-                        <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
-                          {liveTranscription.map((text, i) => (
-                            <motion.div 
-                              key={i}
-                              initial={{ opacity: 0, x: -10 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              className={cn(
-                                "text-[11px] p-2 rounded-lg",
-                                text.startsWith('You:') ? "bg-accent/10 text-accent ml-4" : "bg-white/5 text-text-secondary mr-4"
-                              )}
-                            >
-                              {text}
-                            </motion.div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
+      <button
+        onClick={startLiveMode}
+        className={cn(
+          "px-8 py-2.5 rounded-full text-xs font-bold transition-all flex items-center gap-2",
+          isLiveActive
+            ? "bg-red-500 text-white hover:bg-red-600"
+            : "bg-accent text-accent-foreground hover:opacity-90"
+        )}
+      >
+        {isLiveActive
+          ? <><VolumeX className="w-4 h-4" /> Disconnect</>
+          : <><Volume2 className="w-4 h-4" /> Start Live Session</>
+        }
+      </button>
+    </div>
+
+    {/* Transcription feed */}
+    <div className="w-full flex-1 bg-black/20 rounded-2xl border border-white/5 flex flex-col overflow-hidden min-h-0">
+      <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/5 shrink-0">
+        <div className="flex items-center gap-2 opacity-50">
+          <MessageSquare className="w-3 h-3" />
+          <span className="text-[10px] font-bold uppercase tracking-widest">Live Transcript</span>
+        </div>
+        <button
+          onClick={() => setLiveTranscription([])}
+          className="text-[9px] text-red-400 hover:underline opacity-60"
+        >
+          Clear
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+        {liveTranscription.length === 0 ? (
+          <div className="h-full flex items-center justify-center opacity-20 text-xs italic">
+            Transcription will appear here...
+          </div>
+        ) : (
+          liveTranscription.map((text, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className={cn(
+                "text-[11px] p-2 rounded-lg",
+                text.startsWith('🎤') ? "bg-accent/10 text-accent ml-4" :
+                text.startsWith('🤖') ? "bg-white/5 text-text-secondary mr-4" :
+                text.startsWith('❌') ? "bg-red-500/10 text-red-400" :
+                text.startsWith('✅') ? "bg-green-500/10 text-green-400" :
+                "bg-white/5 text-text-secondary opacity-60"
+              )}
+            >
+              {text}
+            </motion.div>
+          ))
+        )}
+      </div>
+
+      {/* Text input fallback */}
+      {isLiveActive && (
+        <div className="p-3 border-t border-white/5 shrink-0">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Or type a message to Nexus AI..."
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-accent"
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                  const text = e.currentTarget.value.trim();
+                  e.currentTarget.value = '';
+                  setLiveTranscription(prev => [...prev, `🎤 You: ${text}`]);
+                  try {
+                    liveSessionRef.current?.sendClientContent({
+                      turns: [{ role: 'user', parts: [{ text }] }],
+                      turnComplete: true
+                    });
+                  } catch (err) {
+                    console.error('Send text error:', err);
+                  }
+                }
+              }}
+            />
+            <button
+              className="p-2 bg-accent text-accent-foreground rounded-lg hover:opacity-90"
+              title="Send"
+            >
+              <Send className="w-3 h-3" />
+            </button>
+          </div>
+          <p className="text-[9px] text-text-secondary opacity-40 mt-1 text-center">
+            Press Enter to send text • Microphone streams automatically
+          </p>
+        </div>
+      )}
+    </div>
+  </motion.div>
+)}
 
                 {activeTab === 'debugger' && (
                   <motion.div
