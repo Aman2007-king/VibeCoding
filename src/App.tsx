@@ -1532,78 +1532,219 @@ When suggesting changes, always mention which file to edit. When you see bugs, c
     }
   };
 
-  const startLiveMode = async () => {
-    if (isLiveActive) {
-      liveSessionRef.current?.close();
-      setIsLiveActive(false);
-      return;
-    }
-
-    const ai = new GoogleGenAI({ apiKey: userApiKey || process.env.GEMINI_API_KEY || "" });
-    
+ const startLiveMode = async () => {
+  // If already active, disconnect
+  if (isLiveActive) {
     try {
-      const session = await ai.live.connect({
-        model: 'gemini-3.1-flash-live-preview',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          outputAudioTranscription: {},
-          inputAudioTranscription: {},
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-          },
-          systemInstruction: `You are Nexus AI, a real-time coding companion. Talk to the developer naturally about their code and provide guidance.
-          Current File: ${activeFile.name}
-          Code:
-          ${activeFile.code}`,
+      liveSessionRef.current?.close();
+    } catch (e) {
+      console.error('Error closing live session:', e);
+    }
+    setIsLiveActive(false);
+    setLiveTranscription(prev => [...prev, "🔴 Session ended."]);
+    return;
+  }
+
+  // Check API key
+  const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    showToast('Please set your Gemini API key first (click API Key button)', 'error');
+    setIsApiKeyModalOpen(true);
+    return;
+  }
+
+  setLiveTranscription([]);
+  setLiveTranscription(prev => [...prev, "🔄 Connecting to Nexus Live AI..."]);
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+
+    const session = await ai.live.connect({
+      model: 'gemini-2.0-flash-live-001',
+      config: {
+        responseModalities: [Modality.TEXT],
+        systemInstruction: {
+          parts: [{
+            text: `You are Nexus AI, a real-time coding companion built into the Nexus Forge IDE.
+Talk to the developer naturally. Help them debug, write, and optimize code.
+
+Current active file: ${activeFile?.name || 'none'}
+Language: ${activeFile?.language || 'none'}
+
+Current code:
+${activeFile?.code?.substring(0, 2000) || 'No code yet'}
+
+Be concise, helpful, and technical. Speak naturally as if talking to a colleague.`
+          }]
         },
-        callbacks: {
-          onopen: () => {
-            setIsLiveActive(true);
-            setLiveTranscription(prev => [...prev, "Nexus AI: Connected. How can I help you today?"]);
-          },
-          onmessage: (message: any) => {
-            // Handle audio output
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (base64Audio) {
-              const audioBlob = b64toBlob(base64Audio, 'audio/pcm');
-              const audioUrl = URL.createObjectURL(audioBlob);
-              const audio = new Audio(audioUrl);
-              audio.play();
+      },
+      callbacks: {
+        onopen: () => {
+          setIsLiveActive(true);
+          setLiveTranscription(prev => [...prev, "✅ Nexus AI: Connected! How can I help you with your code today?"]);
+          showToast('Live AI connected!', 'success');
+        },
+        onmessage: (message: any) => {
+          try {
+            // Handle text responses
+            const textPart = message.serverContent?.modelTurn?.parts?.find(
+              (p: any) => p.text
+            );
+            if (textPart?.text) {
+              setLiveTranscription(prev => [...prev, `🤖 Nexus AI: ${textPart.text}`]);
             }
 
-            // Handle transcriptions
-            if (message.serverContent?.modelTurn?.parts?.[0]?.text) {
-              setLiveTranscription(prev => [...prev, `Nexus AI: ${message.serverContent.modelTurn.parts[0].text}`]);
+            // Handle audio responses
+            const audioPart = message.serverContent?.modelTurn?.parts?.find(
+              (p: any) => p.inlineData?.mimeType?.startsWith('audio/')
+            );
+            if (audioPart?.inlineData?.data) {
+              playAudio(audioPart.inlineData.data, audioPart.inlineData.mimeType);
             }
-            if (message.serverContent?.userTurn?.parts?.[0]?.text) {
-              setLiveTranscription(prev => [...prev, `You: ${message.serverContent.userTurn.parts[0].text}`]);
-            }
-          },
-          onclose: () => setIsLiveActive(false),
-        }
-      });
-      liveSessionRef.current = session;
-    } catch (error) {
-      console.error("Live API Error:", error);
-    }
-  };
 
-  const b64toBlob = (b64Data: string, contentType = '', sliceSize = 512) => {
-    const byteCharacters = atob(b64Data);
-    const byteArrays = [];
-    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-      const slice = byteCharacters.slice(offset, offset + sliceSize);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
+            // Handle input transcription (what user said)
+            const inputTranscript = message.serverContent?.inputTranscription?.text;
+            if (inputTranscript) {
+              setLiveTranscription(prev => [...prev, `🎤 You: ${inputTranscript}`]);
+            }
+
+            // Handle output transcription
+            const outputTranscript = message.serverContent?.outputTranscription?.text;
+            if (outputTranscript && !textPart) {
+              setLiveTranscription(prev => [...prev, `🤖 Nexus AI: ${outputTranscript}`]);
+            }
+
+            // Turn complete
+            if (message.serverContent?.turnComplete) {
+              console.log('[LiveAI] Turn complete');
+            }
+          } catch (e) {
+            console.error('[LiveAI] Message handling error:', e);
+          }
+        },
+        onerror: (error: any) => {
+          console.error('[LiveAI] Error:', error);
+          setLiveTranscription(prev => [...prev, `❌ Error: ${error.message || 'Connection error'}`]);
+          setIsLiveActive(false);
+          showToast('Live AI error', 'error');
+        },
+        onclose: () => {
+          setIsLiveActive(false);
+          setLiveTranscription(prev => [...prev, "🔴 Session closed."]);
+          showToast('Live AI disconnected', 'info');
+        },
       }
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-    return new Blob(byteArrays, { type: contentType });
-  };
+    });
 
-  const handleGithubConnect = async () => {
+    liveSessionRef.current = session;
+
+    // Start microphone capture
+    await startMicrophone(session);
+
+  } catch (error: any) {
+    console.error('[LiveAI] Connection error:', error);
+    setIsLiveActive(false);
+
+    let errorMsg = error.message || 'Failed to connect';
+    if (errorMsg.includes('API_KEY')) {
+      errorMsg = 'Invalid API key. Please check your Gemini API key.';
+    } else if (errorMsg.includes('model')) {
+      errorMsg = 'Model not available. Make sure your API key has Gemini 2.0 Flash access.';
+    }
+
+    setLiveTranscription(prev => [...prev, `❌ Failed to connect: ${errorMsg}`]);
+    showToast(`Live AI failed: ${errorMsg}`, 'error');
+  }
+};
+// Play audio from base64 data
+const playAudio = useCallback(async (base64Data: string, mimeType: string) => {
+  try {
+    const audioContext = audioContextRef.current || new AudioContext();
+    audioContextRef.current = audioContext;
+
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    source.start(0);
+  } catch (e) {
+    console.error('[LiveAI] Audio playback error:', e);
+  }
+}, []);
+
+// Start microphone and stream to Gemini
+const startMicrophone = useCallback(async (session: any) => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+      }
+    });
+
+    const audioContext = new AudioContext({ sampleRate: 16000 });
+    audioContextRef.current = audioContext;
+
+    const source = audioContext.createMediaStreamSource(stream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (e) => {
+      if (!liveSessionRef.current || !isLiveActive) return;
+
+      const inputData = e.inputBuffer.getChannelData(0);
+      // Convert float32 to int16
+      const int16Data = new Int16Array(inputData.length);
+      for (let i = 0; i < inputData.length; i++) {
+        int16Data[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+      }
+
+      // Convert to base64
+      const uint8 = new Uint8Array(int16Data.buffer);
+      let binary = '';
+      uint8.forEach(byte => binary += String.fromCharCode(byte));
+      const base64Audio = btoa(binary);
+
+      // Send to Gemini Live
+      try {
+        session.sendRealtimeInput({
+          audio: {
+            data: base64Audio,
+            mimeType: 'audio/pcm;rate=16000'
+          }
+        });
+      } catch (e) {
+        // Session might be closed
+      }
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    setLiveTranscription(prev => [...prev, "🎤 Microphone active. Start speaking..."]);
+
+    // Store processor reference for cleanup
+    audioWorkletRef.current = processor as any;
+
+  } catch (err: any) {
+    if (err.name === 'NotAllowedError') {
+      setLiveTranscription(prev => [...prev, "❌ Microphone permission denied. Please allow microphone access."]);
+      showToast('Microphone permission denied', 'error');
+    } else {
+      setLiveTranscription(prev => [...prev, `❌ Microphone error: ${err.message}`]);
+    }
+    setIsLiveActive(false);
+  }
+}, [isLiveActive]);
+  
+const handleGithubConnect = async () => {
     try {
       const response = await fetch(`/api/auth/github/url?origin=${encodeURIComponent(window.location.origin)}`);
       const { url } = await response.json();
@@ -5750,6 +5891,64 @@ const handleExecuteCode = async () => {
       )}
     </main>
 
+      {/* API Key Modal */}
+      <AnimatePresence>
+        {isApiKeyModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => setIsApiKeyModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              className="bg-bg-secondary border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-white mb-2">Gemini API Key</h3>
+              <p className="text-xs text-text-secondary mb-4 opacity-60">
+                Required for AI features and Live Voice. Get yours free at{' '}
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-accent underline">
+                  aistudio.google.com
+                </a>
+              </p>
+              <input
+                type="password"
+                placeholder="AIza..."
+                defaultValue={userApiKey}
+                id="api-key-input"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent mb-4"
+                autoFocus
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setIsApiKeyModalOpen(false)}
+                  className="flex-1 py-2 bg-white/5 text-text-secondary rounded-xl text-xs font-bold hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const input = document.getElementById('api-key-input') as HTMLInputElement;
+                    const key = input?.value?.trim();
+                    if (key) {
+                      setUserApiKey(key);
+                      saveApiKey(key);
+                      showToast('API key saved!', 'success');
+                    }
+                    setIsApiKeyModalOpen(false);
+                  }}
+                  className="flex-1 py-2 bg-accent text-accent-foreground rounded-xl text-xs font-bold hover:opacity-90"
+                >
+                  Save Key
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Voice Status Indicator */}
       <AnimatePresence>
         {toasts.map((toast, i) => (
