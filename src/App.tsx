@@ -102,7 +102,6 @@ import About from './components/About';
 import VercelClone from './components/VercelClone';
 import Login from './components/Login';
 import { ApiPlayground } from './components/ApiPlayground';
-import { Whiteboard } from './components/Whiteboard';
 
 import { 
   auth, 
