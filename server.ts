@@ -607,160 +607,194 @@ app.use((req, res, next) => {
   });
 
 // ─── Code Execution Endpoint ───────────────────────────────────────────────
-// ─── Code Execution Endpoint (Piston API - No API Key Required) ───────────
+  // ─── Code Execution Endpoint (JDoodle + Native fallback) ─────────────────
 app.post("/api/execute", async (req, res) => {
   const { code, language, filename } = req.body;
   if (!code) return res.status(400).json({ error: "No code provided" });
 
   // Step 1: Detect language from filename extension
   const extToLang: Record<string, string> = {
-    '.py':   'python',
-    '.js':   'javascript',
-    '.ts':   'typescript',
-    '.cpp':  'cpp',
-    '.cc':   'cpp',
-    '.c':    'c',
-    '.java': 'java',
-    '.go':   'go',
-    '.rs':   'rust',
-    '.rb':   'ruby',
-    '.php':  'php',
-    '.cs':   'csharp',
-    '.kt':   'kotlin',
-    '.swift':'swift',
-    '.r':    'r',
-    '.sh':   'bash',
-    '.bash': 'bash',
-    '.sql':  'sqlite3',
+    '.py':    'python',
+    '.js':    'javascript',
+    '.ts':    'typescript',
+    '.cpp':   'cpp',
+    '.cc':    'cpp',
+    '.c':     'c',
+    '.java':  'java',
+    '.go':    'go',
+    '.rs':    'rust',
+    '.rb':    'ruby',
+    '.php':   'php',
+    '.cs':    'csharp',
+    '.kt':    'kotlin',
+    '.swift': 'swift',
+    '.r':     'r',
+    '.sh':    'bash',
+    '.bash':  'bash',
   };
 
-  const ext = filename ? filename.substring(filename.lastIndexOf('.')).toLowerCase() : '';
-  const finalLanguage = (filename && extToLang[ext]) ? extToLang[ext] : language;
+  const ext = filename
+    ? filename.substring(filename.lastIndexOf('.')).toLowerCase()
+    : '';
+  const finalLanguage =
+    filename && extToLang[ext] ? extToLang[ext] : language;
 
-  // Step 2: Piston language map (language name + version + filename)
-  const pistonMap: Record<string, { language: string; version: string; filename: string }> = {
-    'python':     { language: 'python',     version: '3.10.0',  filename: 'main.py'    },
-    'javascript': { language: 'javascript', version: '18.15.0', filename: 'main.js'    },
-    'typescript': { language: 'typescript', version: '5.0.3',   filename: 'main.ts'    },
-    'java':       { language: 'java',       version: '15.0.2',  filename: 'Main.java'  },
-    'cpp':        { language: 'c++',        version: '10.2.0',  filename: 'main.cpp'   },
-    'c':          { language: 'c',          version: '10.2.0',  filename: 'main.c'     },
-    'go':         { language: 'go',         version: '1.16.2',  filename: 'main.go'    },
-    'rust':       { language: 'rust',       version: '1.50.0',  filename: 'main.rs'    },
-    'ruby':       { language: 'ruby',       version: '3.0.1',   filename: 'main.rb'    },
-    'php':        { language: 'php',        version: '8.2.3',   filename: 'main.php'   },
-    'csharp':     { language: 'csharp',     version: '6.12.0',  filename: 'main.cs'    },
-    'kotlin':     { language: 'kotlin',     version: '1.8.20',  filename: 'main.kt'    },
-    'swift':      { language: 'swift',      version: '5.3.3',   filename: 'main.swift' },
-    'r':          { language: 'r',          version: '4.1.1',   filename: 'main.r'     },
-    'bash':       { language: 'bash',       version: '5.2.0',   filename: 'main.sh'    },
-    'shell':      { language: 'bash',       version: '5.2.0',   filename: 'main.sh'    },
-    'sqlite3':    { language: 'sqlite3',    version: '3.36.0',  filename: 'main.sql'   },
+  // Step 2: Native execution for Python and JavaScript (fastest, no API needed)
+  const nativeLanguages = ['python', 'javascript'];
+  if (nativeLanguages.includes(finalLanguage)) {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-'));
+    try {
+      let filename2 = '';
+      let runCommand = '';
+
+      if (finalLanguage === 'python') {
+        filename2 = path.join(tmpDir, 'main.py');
+        fs.writeFileSync(filename2, code);
+        runCommand = `timeout 10 python3 "${filename2}"`;
+      } else {
+        filename2 = path.join(tmpDir, 'main.js');
+        fs.writeFileSync(filename2, code);
+        runCommand = `timeout 10 node "${filename2}"`;
+      }
+
+      const { stdout, stderr } = await execAsync(runCommand, {
+        timeout: 15000,
+        maxBuffer: 1024 * 1024,
+      });
+
+      return res.json({
+        success: true,
+        output: stdout || '',
+        error: stderr || '',
+        language: finalLanguage,
+        via: 'Native'
+      });
+    } catch (err: any) {
+      return res.json({
+        success: false,
+        output: '',
+        error: err.stderr || err.message || 'Execution failed',
+        language: finalLanguage,
+        via: 'Native'
+      });
+    } finally {
+      try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+    }
+  }
+
+  // Step 3: JDoodle for all other languages
+  const jdoodleMap: Record<string, { language: string; versionIndex: string }> = {
+    'java':       { language: 'java',       versionIndex: '4' },
+    'cpp':        { language: 'cpp17',      versionIndex: '1' },
+    'c':          { language: 'c',          versionIndex: '5' },
+    'typescript': { language: 'typescript', versionIndex: '1' },
+    'go':         { language: 'go',         versionIndex: '4' },
+    'rust':       { language: 'rust',       versionIndex: '4' },
+    'ruby':       { language: 'ruby',       versionIndex: '4' },
+    'php':        { language: 'php',        versionIndex: '4' },
+    'csharp':     { language: 'csharp',     versionIndex: '4' },
+    'kotlin':     { language: 'kotlin',     versionIndex: '3' },
+    'swift':      { language: 'swift',      versionIndex: '4' },
+    'r':          { language: 'r',          versionIndex: '4' },
+    'bash':       { language: 'bash',       versionIndex: '4' },
+    'shell':      { language: 'bash',       versionIndex: '4' },
+    'sql':        { language: 'sql',        versionIndex: '4' },
+    'scala':      { language: 'scala',      versionIndex: '4' },
+    'perl':       { language: 'perl',       versionIndex: '4' },
   };
 
-  const pistonLang = pistonMap[finalLanguage];
+  const jdoodleLang = jdoodleMap[finalLanguage];
 
-  if (!pistonLang) {
+  if (!jdoodleLang) {
     return res.json({
       success: false,
       output: '',
-      error: `❌ Language "${finalLanguage}" is not supported.\n\nSupported: Python, JavaScript, TypeScript, Java, C, C++, Go, Rust, Ruby, PHP, C#, Kotlin, Swift, R, Bash`,
+      error: `❌ Language "${finalLanguage}" is not supported.\n\nSupported: Python, JS, TS, Java, C, C++, Go, Rust, Ruby, PHP, C#, Kotlin, Swift, R, Bash, SQL, Scala, Perl`,
       language: finalLanguage
     });
   }
 
-  // Step 3: Call Piston API
+  const clientId = process.env.JDOODLE_CLIENT_ID;
+  const clientSecret = process.env.JDOODLE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    return res.json({
+      success: false,
+      output: '',
+      error: '⚠️ JDoodle API credentials not set.\nAdd JDOODLE_CLIENT_ID and JDOODLE_CLIENT_SECRET to Render environment variables.\nGet free credentials at: https://www.jdoodle.com/compiler-api',
+      language: finalLanguage
+    });
+  }
+
   try {
-    console.log(`[Execute] Running ${finalLanguage} via Piston API...`);
+    console.log(`[Execute] Running ${finalLanguage} via JDoodle...`);
 
     const response = await axios.post(
-      'https://emkc.org/api/v2/piston/execute',
+      'https://api.jdoodle.com/v1/execute',
       {
-        language: pistonLang.language,
-        version:  pistonLang.version,
-        files: [{
-          name:    pistonLang.filename,
-          content: code
-        }],
-        stdin:           '',
-        args:            [],
-        compile_timeout: 30000,
-        run_timeout:     10000,
-        compile_memory_limit: -1,
-        run_memory_limit:     -1,
+        script:        code,
+        language:      jdoodleLang.language,
+        versionIndex:  jdoodleLang.versionIndex,
+        clientId,
+        clientSecret,
+        stdin:         '',
       },
       {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 35000
+        timeout: 30000
       }
     );
 
-    const result   = response.data;
-    const runOut   = result.run?.stdout   || '';
-    const runErr   = result.run?.stderr   || '';
-    const compOut  = result.compile?.stdout || '';
-    const compErr  = result.compile?.stderr || '';
+    const result = response.data;
+    console.log(`[Execute] JDoodle result:`, result);
 
-    // Combine compile + run output
-    const fullOutput = [compOut, runOut].filter(Boolean).join('\n').trim();
-    const fullError  = [compErr, runErr].filter(Boolean).join('\n').trim();
+    // JDoodle returns statusCode 200 on success
+    if (result.statusCode === 200 || result.output) {
+      return res.json({
+        success: true,
+        output:  result.output || '',
+        error:   '',
+        language: finalLanguage,
+        via:     'JDoodle',
+        cpuTime: result.cpuTime,
+        memory:  result.memory
+      });
+    }
 
-    console.log(`[Execute] Done. Output: ${fullOutput.length} chars, Error: ${fullError.length} chars`);
-
+    // Handle JDoodle error responses
     return res.json({
-      success: !fullError || !!fullOutput,
-      output:  fullOutput,
-      error:   fullError,
+      success: false,
+      output:  result.output || '',
+      error:   result.error || result.output || 'Execution failed',
       language: finalLanguage,
-      via: 'Piston'
+      via:     'JDoodle'
     });
 
   } catch (err: any) {
-    console.error('[Execute] Piston API error:', err.response?.data || err.message);
+    console.error('[Execute] JDoodle error:', err.response?.data || err.message);
 
-    // Retry with different version if version not found
-    if (err.response?.status === 400 && err.response?.data?.message?.includes('version')) {
-      try {
-        const retryResponse = await axios.post(
-          'https://emkc.org/api/v2/piston/execute',
-          {
-            language: pistonLang.language,
-            version:  '*',  // Use latest available version
-            files: [{
-              name:    pistonLang.filename,
-              content: code
-            }],
-            stdin: '',
-            args:  [],
-          },
-          {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 35000
-          }
-        );
+    const errData = err.response?.data;
 
-        const r = retryResponse.data;
-        return res.json({
-          success: true,
-          output:  r.run?.stdout || '',
-          error:   r.run?.stderr || r.compile?.stderr || '',
-          language: finalLanguage,
-          via: 'Piston (latest)'
-        });
-      } catch (retryErr: any) {
-        console.error('[Execute] Retry failed:', retryErr.message);
-      }
+    // Handle daily limit exceeded
+    if (errData?.error?.includes('limit') || err.response?.status === 429) {
+      return res.json({
+        success: false,
+        output:  '',
+        error:   '⚠️ JDoodle daily limit reached (200 calls/day on free tier).\nUpgrade at jdoodle.com or try again tomorrow.',
+        language: finalLanguage
+      });
     }
 
     return res.json({
       success: false,
       output:  '',
-      error:   `⚠️ Execution service temporarily unavailable.\n${err.response?.data?.message || err.message}`,
+      error:   errData?.error || err.message || 'JDoodle execution failed',
       language: finalLanguage
     });
   }
 });
 // ─────────────────────────────────────────────────────────────────────────────
+//───────────────────────────────────────────────────
    
   // ──────────────────────────────────────────────────────────────────────────
   // Vite middleware for development
