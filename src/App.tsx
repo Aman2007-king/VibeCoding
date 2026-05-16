@@ -588,6 +588,33 @@ useEffect(() => {
   });
   return () => unsubscribe();
 }, []);
+         // ✅ Keep Render server alive — ping every 14 minutes
+useEffect(() => {
+  const keepAlive = setInterval(async () => {
+    try {
+      await fetch('/api/auth/me');
+      console.log('[KeepAlive] Server pinged');
+    } catch (e) {
+      console.log('[KeepAlive] Ping failed');
+    }
+  }, 14 * 60 * 1000); // 14 minutes
+
+  return () => clearInterval(keepAlive);
+}, []);
+
+         // ✅ Detect and notify about cold start
+useEffect(() => {
+  const start = Date.now();
+  
+  fetch('/api/auth/me')
+    .then(() => {
+      const loadTime = Date.now() - start;
+      if (loadTime > 3000) {
+        showToast(`Server woke up in ${(loadTime/1000).toFixed(1)}s ☕`, 'info');
+      }
+    })
+    .catch(() => {});
+}, []);
   // Firestore Sync: Projects
   useEffect(() => {
     if (!currentUser) return;
