@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback, memo, Suspense, lazy } from 'react';
-const Editor = lazy(() => import('@monaco-editor/react'));
+import { lazy, Suspense, memo, useState, useEffect, 
+         useCallback, useRef, useMemo } from 'react';
+
+// ✅ Lazy load Monaco Editor — heaviest component (~2MB)
+const MonacoEditor = lazy(() => 
+  import('@monaco-editor/react').then(m => ({ default: m.default }))
+);
+
+// ✅ Lazy load heavy tab components
+const Whiteboard = lazy(() => import('./components/Whiteboard'));
 import { io, Socket } from 'socket.io-client';
 import { loader } from '@monaco-editor/react';
 // Add getRedirectResult to the firebase/auth import
@@ -4381,49 +4389,38 @@ const handleExecuteCode = async () => {
                 </motion.div>
               )}
             </AnimatePresence>
-            <Suspense fallback={<div className="h-full w-full flex items-center justify-center bg-bg-primary text-text-secondary animate-pulse">Loading Editor...</div>}>
-              <Editor
-                height="100%"
-                language={activeFile.language}
-                theme="nexus-theme"
-                value={activeFile.code}
-                onChange={(val) => updateFile(activeFileId, { code: val || '' })}
-                onMount={(editor, monaco) => handleEditorMount(editor, monaco, activeFileId)}
-                options={{
-                  fontSize: 13,
-                  fontFamily: 'JetBrains Mono, monospace',
-                  minimap: { enabled: true, scale: 0.75, side: 'right' },
-                  padding: { top: 20 },
-                  scrollBeyondLastLine: false,
-                  lineNumbers: 'on',
-                  glyphMargin: true,
-                  folding: true,
-                  lineDecorationsWidth: 10,
-                  lineNumbersMinChars: 3,
-                  suggestOnTriggerCharacters: true,
-                  quickSuggestions: {
-                    other: true,
-                    comments: true,
-                    strings: true
-                  },
-                  wordBasedSuggestions: "allDocuments",
-                  parameterHints: {
-                    enabled: true
-                  },
-                  formatOnPaste: true,
-                  formatOnType: true,
-                  autoClosingBrackets: 'always',
-                  autoClosingQuotes: 'always',
-                  autoSurround: 'languageDefined',
-                  bracketPairColorization: {
-                    enabled: true
-                  },
-                  smoothScrolling: true,
-                  cursorBlinking: 'smooth',
-                  cursorSmoothCaretAnimation: 'on'
-                }}
-              />
-            </Suspense>
+          {/* Replace your existing Monaco editor with this */}
+<Suspense fallback={
+  <div className="flex-1 flex items-center justify-center bg-black/20">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      <span className="text-[10px] text-text-secondary opacity-50 uppercase tracking-widest">
+        Loading Editor...
+      </span>
+    </div>
+  </div>
+}>
+  <MonacoEditor
+    height="100%"
+    language={activeFile?.language || 'javascript'}
+    value={activeFile?.code || ''}
+    onChange={(value) => updateFile(activeFileId, { code: value || '' })}
+    theme={editorTheme}
+    options={{
+      fontSize: fontSize,
+      minimap: { enabled: !isMobile },
+      wordWrap: wordWrap ? 'on' : 'off',
+      lineNumbers: showLineNumbers ? 'on' : 'off',
+      scrollBeyondLastLine: false,
+      automaticLayout: true,
+      tabSize: 2,
+      suggestOnTriggerCharacters: true,
+      quickSuggestions: true,
+      formatOnPaste: true,
+      formatOnType: false,
+    }}
+  />
+</Suspense>
           </div>
         </div>
         ) : (
