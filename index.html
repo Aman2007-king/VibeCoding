@@ -3,72 +3,186 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Nexus Forge — AI-powered cloud IDE" />
     <title>VibeCoding — AI IDE</title>
     <style>
-      #initial-loader {
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: #050505;
+        color: #fff;
+        font-family: system-ui, -apple-system, sans-serif;
+        overflow: hidden;
+      }
+
+      #root { min-height: 100vh; }
+
+      /* ── Loader ── */
+      #splash {
         position: fixed; inset: 0;
         background: #050505;
         display: flex; flex-direction: column;
         align-items: center; justify-content: center;
-        gap: 24px; z-index: 9999;
-        transition: opacity 0.5s ease;
+        gap: 20px;
+        z-index: 99999;
+        transition: opacity 0.6s ease, transform 0.6s ease;
       }
-      #initial-loader.hidden { opacity: 0; pointer-events: none; }
-      .loader-logo {
-        width: 64px; height: 64px;
-        background: #10b981; border-radius: 16px;
+
+      #splash.fade-out {
+        opacity: 0;
+        transform: scale(1.03);
+        pointer-events: none;
+      }
+
+      /* Logo */
+      .splash-logo {
+        width: 72px; height: 72px;
+        background: #10b981;
+        border-radius: 20px;
         display: flex; align-items: center; justify-content: center;
-        animation: bounce 1s ease-in-out infinite;
+        box-shadow: 0 0 40px rgba(16,185,129,0.3);
+        animation: logoBounce 1.2s ease-in-out infinite;
       }
-      .loader-bar {
-        width: 200px; height: 3px;
-        background: #1a1a1a; border-radius: 99px; overflow: hidden;
+
+      /* Progress bar */
+      .splash-bar-wrap {
+        width: 220px; height: 3px;
+        background: #1a1a1a;
+        border-radius: 99px;
+        overflow: hidden;
       }
-      .loader-bar-fill {
-        height: 100%; background: #10b981; border-radius: 99px;
-        animation: load 3s ease-in-out forwards;
+      .splash-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #10b981, #34d399);
+        border-radius: 99px;
+        width: 0%;
+        transition: width 0.4s ease;
       }
-      .loader-text {
-        color: #a1a1aa; font-family: system-ui;
-        font-size: 11px; letter-spacing: 0.3em;
+
+      /* Status text */
+      .splash-status {
+        font-size: 11px;
+        letter-spacing: 0.25em;
         text-transform: uppercase;
+        color: #52525b;
+        min-height: 16px;
+        transition: opacity 0.3s;
       }
-      @keyframes bounce {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-8px); }
+
+      /* Dots */
+      .splash-dots {
+        display: flex; gap: 6px;
       }
-      @keyframes load {
-        0% { width: 0%; }
-        60% { width: 70%; }
-        100% { width: 95%; }
+      .splash-dots span {
+        width: 6px; height: 6px;
+        background: #10b981;
+        border-radius: 50%;
+        opacity: 0.3;
+        animation: dotPulse 1.2s ease-in-out infinite;
+      }
+      .splash-dots span:nth-child(2) { animation-delay: 0.2s; }
+      .splash-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+      /* Version badge */
+      .splash-version {
+        position: absolute;
+        bottom: 24px;
+        font-size: 10px;
+        color: #3f3f46;
+        letter-spacing: 0.2em;
+      }
+
+      @keyframes logoBounce {
+        0%, 100% { transform: translateY(0) rotate(0deg); }
+        50% { transform: translateY(-10px) rotate(2deg); }
+      }
+      @keyframes dotPulse {
+        0%, 100% { opacity: 0.3; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.4); }
       }
     </style>
   </head>
+
   <body>
-    <!-- Loading Screen -->
-    <div id="initial-loader">
-      <div class="loader-logo">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-          <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+    <!-- Splash screen shown before React mounts -->
+    <div id="splash">
+      <div class="splash-logo">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
+          stroke="white" stroke-width="2.5" stroke-linecap="round">
+          <polyline points="16 18 22 12 16 6"/>
+          <polyline points="8 6 2 12 8 18"/>
         </svg>
       </div>
-      <div class="loader-bar"><div class="loader-bar-fill"></div></div>
-      <div class="loader-text">Initializing VibeCoding</div>
+
+      <div class="splash-bar-wrap">
+        <div class="splash-bar-fill" id="splash-bar"></div>
+      </div>
+
+      <div class="splash-dots">
+        <span></span><span></span><span></span>
+      </div>
+
+      <div class="splash-status" id="splash-status">
+        Waking up server...
+      </div>
+
+      <div class="splash-version">NEXUS FORGE v2.0</div>
     </div>
 
-    <!-- React Root -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- Hide loader once React mounts -->
     <script>
-      window.addEventListener('load', () => {
+      const bar    = document.getElementById('splash-bar');
+      const status = document.getElementById('splash-status');
+      const splash = document.getElementById('splash');
+
+      // Realistic loading stages with timing
+      const stages = [
+        { pct: 8,  ms: 0,    label: 'Waking up server...'       },
+        { pct: 20, ms: 800,  label: 'Loading runtime...'        },
+        { pct: 35, ms: 1800, label: 'Connecting to Firebase...' },
+        { pct: 55, ms: 3000, label: 'Loading editor...'         },
+        { pct: 70, ms: 4500, label: 'Preparing workspace...'    },
+        { pct: 85, ms: 6000, label: 'Almost ready...'           },
+        { pct: 95, ms: 8000, label: 'Finalizing...'             },
+      ];
+
+      stages.forEach(({ pct, ms, label }) => {
         setTimeout(() => {
-          const loader = document.getElementById('initial-loader');
-          if (loader) loader.classList.add('hidden');
-          setTimeout(() => loader?.remove(), 500);
-        }, 1000);
+          if (!splash.classList.contains('fade-out')) {
+            bar.style.width    = pct + '%';
+            status.textContent = label;
+          }
+        }, ms);
       });
+
+      // Hide splash once React is ready
+      function hideSplash() {
+        bar.style.width    = '100%';
+        status.textContent = 'Ready!';
+        setTimeout(() => {
+          splash.classList.add('fade-out');
+          setTimeout(() => splash.remove(), 700);
+        }, 300);
+      }
+
+      // Watch for React root to mount
+      const observer = new MutationObserver(() => {
+        const root = document.getElementById('root');
+        if (root && root.children.length > 0) {
+          observer.disconnect();
+          hideSplash();
+        }
+      });
+
+      observer.observe(
+        document.getElementById('root'),
+        { childList: true, subtree: true }
+      );
+
+      // Safety timeout — hide after 15s no matter what
+      setTimeout(hideSplash, 15000);
     </script>
   </body>
 </html>
