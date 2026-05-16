@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "start": "npx tsx server.ts",
+    "start": "node server.ts",
     "render-build": "sudo apt-get install -y g++ gcc default-jdk || true && npm install && vite build"
   },
   "dependencies": {
