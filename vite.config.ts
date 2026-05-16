@@ -1,40 +1,73 @@
-import tailwindcss from '@tailwindcss/vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
-  return {
-    base: '/',
-    plugins: [react(), tailwindcss()],
-    // ✅ Fixed - safe even if key missing
-define: {
-  'process.env': {
-    NODE_ENV: JSON.stringify(mode),
-    GEMINI_API_KEY: JSON.stringify(env.GEMINI_API_KEY || ''),
+export default defineConfig({
+  plugins: [react()],
+  
+  build: {
+    // ✅ Increase chunk size warning limit
+    chunkSizeWarningLimit: 2000,
+    
+    rollupOptions: {
+      output: {
+        // ✅ Split vendor chunks for better caching
+        manualChunks: {
+          // React core
+          'react-vendor': ['react', 'react-dom'],
+          
+          // Monaco editor (heaviest chunk ~2MB)
+          'monaco-editor': ['@monaco-editor/react'],
+          
+          // Animation libraries
+          'motion': ['framer-motion'],
+          
+          // Firebase
+          'firebase': [
+            'firebase/app',
+            'firebase/auth',
+            'firebase/firestore'
+          ],
+          
+          // Google AI
+          'google-ai': ['@google/genai'],
+          
+          // UI utilities
+          'ui-utils': [
+            'lucide-react',
+            'canvas-confetti',
+            'clsx',
+            'tailwind-merge'
+          ],
+          
+          // Socket.io
+          'socket': ['socket.io-client'],
+        }
+      }
+    },
+    
+    // ✅ Minification settings
+    minify: 'esbuild',
+    target: 'esnext',
+    
+    // ✅ Source maps only in development
+    sourcemap: false,
   },
-  'global': 'globalThis',
-},
-    optimizeDeps: {
-      include: [
-        'react-syntax-highlighter',
-        'react-syntax-highlighter/dist/esm/styles/prism',
-        'socket.io-client',
-        'canvas-confetti',
-        'framer-motion',
-        'motion',
-      ],
-    },
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
-    },
-    server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-    },
-  };
+  
+  // ✅ Optimize dependencies
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'framer-motion',
+      'lucide-react',
+    ],
+    exclude: [
+      '@monaco-editor/react',
+    ]
+  },
+
+  server: {
+    port: 5173,
+    hmr: true,
+  }
 });
