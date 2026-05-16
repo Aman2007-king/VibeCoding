@@ -7,7 +7,6 @@ const MonacoEditor = lazy(() =>
 );
 
 // ✅ Lazy load heavy tab components
-const Whiteboard = lazy(() => import('./components/Whiteboard'));
 import { io, Socket } from 'socket.io-client';
 import { loader } from '@monaco-editor/react';
 // Add getRedirectResult to the firebase/auth import
