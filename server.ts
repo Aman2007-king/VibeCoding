@@ -430,37 +430,80 @@ app.use((req, res, next) => {
     files: {},
     cursors: {}
   };
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+  socket.emit("init", projectState);
 
-  io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
+  // ✅ Join a specific room
+  socket.on("join:room", ({ roomId, name, color }) => {
+    socket.join(roomId);
+    (socket as any).roomId = roomId;
+    (socket as any).userName = name;
+    (socket as any).userColor = color;
 
-    socket.emit("init", projectState);
-
-    socket.on("file:update", ({ fileId, code }) => {
-      projectState.files[fileId] = code;
-      socket.broadcast.emit("file:update", { fileId, code, userId: socket.id });
+    // Notify others in room
+    socket.to(roomId).emit("user:join", {
+      userId: socket.id,
+      name,
+      color,
     });
 
-    socket.on("cursor:move", ({ fileId, position }) => {
-      projectState.cursors[socket.id] = { fileId, position };
-      socket.broadcast.emit("cursor:move", { userId: socket.id, fileId, position });
-    });
-
-    socket.on("whiteboard:update", (data) => {
-      socket.broadcast.emit("whiteboard:update", data);
-    });
-
-    socket.on("whiteboard:clear", () => {
-      socket.broadcast.emit("whiteboard:clear");
-    });
-
-    socket.on("disconnect", () => {
-      delete projectState.cursors[socket.id];
-      io.emit("user:leave", socket.id);
-      console.log("User disconnected:", socket.id);
-    });
+    console.log(`[Room] ${name} joined room ${roomId}`);
   });
 
+  // ✅ File updates — broadcast to room
+  socket.on("file:update", ({ fileId, code }) => {
+    const roomId = (socket as any).roomId;
+    projectState.files[fileId] = code;
+    if (roomId) {
+      socket.to(roomId).emit("file:update", {
+        fileId, code, userId: socket.id
+      });
+    } else {
+      socket.broadcast.emit("file:update", {
+        fileId, code, userId: socket.id
+      });
+    }
+  });
+
+  // ✅ Cursor movement — broadcast to room
+  socket.on("cursor:move", ({ fileId, position }) => {
+    const roomId = (socket as any).roomId;
+    projectState.cursors[socket.id] = { fileId, position };
+    const payload = {
+      userId: socket.id,
+      fileId,
+      position,
+      color: (socket as any).userColor,
+      name: (socket as any).userName,
+    };
+    if (roomId) {
+      socket.to(roomId).emit("cursor:move", payload);
+    } else {
+      socket.broadcast.emit("cursor:move", payload);
+    }
+  });
+
+  socket.on("whiteboard:update", (data) => {
+    socket.broadcast.emit("whiteboard:update", data);
+  });
+
+  socket.on("whiteboard:clear", () => {
+    socket.broadcast.emit("whiteboard:clear");
+  });
+
+  socket.on("disconnect", () => {
+    const roomId = (socket as any).roomId;
+    delete projectState.cursors[socket.id];
+    if (roomId) {
+      socket.to(roomId).emit("user:leave", socket.id);
+    } else {
+      io.emit("user:leave", socket.id);
+    }
+    console.log("User disconnected:", socket.id);
+  });
+});
+ 
   // Vercel Clone API
   const vercelProjectSchema = z.object({
     name: z.string().min(1).max(50).regex(/^[a-zA-Z0-9\s-]+$/),
