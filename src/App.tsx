@@ -1,8 +1,8 @@
-import { lazy, Suspense, memo, useState, useEffect, 
+import React, { memo, useState, useEffect, 
          useCallback, useRef, useMemo } from 'react';
 
-// ✅ Use this simple static import at the top
-import Editor from '@monaco-editor/react';
+// Monaco editor - static import with loader
+import Editor, { loader } from '@monaco-editor/react';
 // Add getRedirectResult to the firebase/auth import
 import { User as FirebaseUser, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { 
@@ -436,15 +436,7 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
   );
 };
 
-loader.config({
-  paths: {
-    vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'
-  }
-});
-
-setTimeout(() => {
-  loader.init().catch(() => {});
-}, 3000);
+// Monaco uses bundled version - no CDN config needed
 function App() {
   console.log("App component rendering...");
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
