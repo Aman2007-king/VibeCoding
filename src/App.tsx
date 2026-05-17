@@ -1,14 +1,8 @@
 import { lazy, Suspense, memo, useState, useEffect, 
          useCallback, useRef, useMemo } from 'react';
 
-// ✅ Lazy load Monaco Editor — heaviest component (~2MB)
-const MonacoEditor = lazy(() => 
-  import('@monaco-editor/react').then(m => ({ default: m.default }))
-);
-
-// ✅ Lazy load heavy tab components
-import { io, Socket } from 'socket.io-client';
-import { loader } from '@monaco-editor/react';
+// ✅ Use this simple static import at the top
+import Editor from '@monaco-editor/react';
 // Add getRedirectResult to the firebase/auth import
 import { User as FirebaseUser, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { 
@@ -86,6 +80,7 @@ import {
   Cpu,
   Upload,
   Download,
+  Rocket,      
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Markdown from 'react-markdown';
@@ -466,6 +461,15 @@ function App() {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 3000);
   };
+         const [isDeploying, setIsDeploying] = useState(false);
+const [deployUrl, setDeployUrl] = useState('');
+const [showDeployModal, setShowDeployModal] = useState(false);
+const [codebaseIndex, setCodebaseIndex] = useState<{
+  symbols: { name: string; file: string; type: string; line: number }[];
+  dependencies: string[];
+  summary: string;
+} | null>(null);
+const [isIndexing, setIsIndexing] = useState(false);
   const [isDebugging, setIsDebugging] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -914,6 +918,48 @@ const loadVersions = async () => {
     console.error('Load versions error:', err);
   }
 };
+         const buildCodebaseIndex = useCallback(async () => {
+  if (files.length === 0 || !userApiKey) return;
+  setIsIndexing(true);
+  try {
+    const ai = new GoogleGenAI({ apiKey: userApiKey });
+    const projectContext = files
+      .map(f => `=== ${f.name} ===\n${f.code}`)
+      .join('\n\n');
+    const response = await ai.models.generateContent({
+      model: selectedModel || 'gemini-2.0-flash',
+      contents: [{
+        role: 'user',
+        parts: [{
+          text: `Analyze this codebase and return a JSON object with:
+1. "symbols": array of {name, file, type (function/class/variable/component), line}
+2. "dependencies": array of npm packages used
+3. "summary": 2-sentence project description
+Codebase:
+${projectContext.substring(0, 8000)}
+Return ONLY valid JSON, no markdown.`
+        }]
+      }]
+    });
+    const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const index = JSON.parse(clean);
+    setCodebaseIndex(index);
+    showToast('Codebase indexed ✅', 'success');
+  } catch (err) {
+    console.error('Indexing error:', err);
+  } finally {
+    setIsIndexing(false);
+  }
+}, [files, userApiKey, selectedModel]);
+
+useEffect(() => {
+  if (!userApiKey || files.length === 0) return;
+  const timer = setTimeout(() => {
+    buildCodebaseIndex();
+  }, 5000);
+  return () => clearTimeout(timer);
+}, [files.length, userApiKey]);
   const searchNpm = async (query: string) => {
     if (!query) return;
     setIsSearchingNpm(true);
@@ -1337,6 +1383,46 @@ const monacoOptions = useMemo(() => ({
     }
   };
 
+         const handleDeploy = async () => {
+  if (!currentUser) {
+    showToast('Sign in to deploy', 'error');
+    return;
+  }
+  const hasHtml = files.some(f => f.name.endsWith('.html'));
+  if (!hasHtml) {
+    showToast('Add an index.html file to deploy', 'error');
+    return;
+  }
+  setIsDeploying(true);
+  setShowDeployModal(true);
+  try {
+    const response = await fetch('/api/deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        files: files.map(f => ({
+          name: f.name,
+          content: f.code,
+        })),
+        projectName: `nexus-${currentUser.uid.slice(0, 6)}-${Date.now()}`,
+        userId: currentUser.uid,
+      })
+    });
+    const result = await response.json();
+    if (result.success && result.url) {
+      setDeployUrl(result.url);
+      showToast('🚀 Deployed successfully!', 'success');
+      confetti({ particleCount: 100, spread: 70 });
+    } else {
+      throw new Error(result.error || 'Deploy failed');
+    }
+  } catch (err: any) {
+    showToast(`Deploy failed: ${err.message}`, 'error');
+    setShowDeployModal(false);
+  } finally {
+    setIsDeploying(false);
+  }
+};
  const handleMagicRefactor = async () => {
   if (!activeFile) return;
   setIsGenerating(true);
@@ -1565,66 +1651,89 @@ Focus on: ${activeFile.name} but check other files too.`;
   }
 };
 
-  const handleChatSend = async (customInput?: string) => {
-    const input = customInput || chatInput;
-    if (!input.trim() || isChatStreaming) return;
-    const userMsg = input;
-    if (!customInput) setChatInput('');
-    setIsChatStreaming(true);
-    
-    // Create the history for the AI (everything before this message)
-    const historyForAI = chatHistory.map(h => ({ 
-      role: h.role === 'user' ? 'user' : 'model', 
-      parts: h.parts 
-    }));
+const handleChatSend = async (customInput?: string) => {
+  const input = customInput || chatInput;
+  if (!input.trim() || isChatStreaming) return;
+  const userMsg = input;
+  if (!customInput) setChatInput('');
+  setIsChatStreaming(true);
 
-    setChatHistory(prev => [...prev, { role: 'user', parts: [{ text: userMsg }] }]);
-    saveChatMessageToFirestore('user', userMsg);
-    
-    // Add a placeholder for AI response
-    setChatHistory(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
+  const historyForAI = chatHistory.map(h => ({
+    role: h.role === 'user' ? 'user' : 'model',
+    parts: h.parts
+  }));
 
-   const systemInstruction = `You are Nexus AI, a professional coding assistant built into the Nexus Forge IDE. You help developers build, debug, and optimize their code. Be concise, technical, and helpful.
+  setChatHistory(prev => [...prev, { role: 'user', parts: [{ text: userMsg }] }]);
+  saveChatMessageToFirestore('user', userMsg);
+  setChatHistory(prev => [...prev, { role: 'model', parts: [{ text: '' }] }]);
 
-CURRENT PROJECT FILES (${files.length} files):
-${buildProjectContext()}
+  const allFiles = files
+    .map(f => `=== FILE: ${f.name} (${f.language}) ===\n${f.code}`)
+    .join('\n\n');
 
-ACTIVE FILE: ${activeFile.name} (${activeFile.language})
+  const indexContext = codebaseIndex
+    ? `\nCODEBASE SUMMARY: ${codebaseIndex.summary}
+DEPENDENCIES: ${codebaseIndex.dependencies?.join(', ') || 'none'}
+SYMBOLS: ${codebaseIndex.symbols?.slice(0, 20).map(s => `${s.type} ${s.name} in ${s.file}`).join(', ') || 'none'}`
+    : '';
 
-When suggesting changes, always mention which file to edit. When you see bugs, check all files for related issues.`;
+  const systemInstruction = `You are Nexus AI, an expert coding assistant like Cursor IDE.
+You have FULL ACCESS to the entire codebase below.
+${indexContext}
+ACTIVE FILE: ${activeFile?.name} (${activeFile?.language})
+ALL PROJECT FILES (${files.length} files):
+${allFiles.substring(0, 12000)}
+INSTRUCTIONS:
+- When suggesting code changes, always say which file to edit
+- Reference specific line numbers when possible
+- If asked to create a new feature, update ALL relevant files
+- Detect bugs across all files, not just the active one
+- Format code suggestions in proper markdown code blocks with language tags
+- Be concise but thorough`;
 
-    try {
-      let fullAiResponse = '';
-      await chatWithAIStream(
-        userMsg, 
-        historyForAI,
-        (text) => {
-          fullAiResponse = text;
-          setChatHistory(prev => {
-            const newHistory = [...prev];
-            if (newHistory.length > 0) {
-              newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text }] };
-            }
-            return newHistory;
-          });
-        },
-        userApiKey,
-        systemInstruction,
-        selectedModel
-      );
-      saveChatMessageToFirestore('assistant', fullAiResponse);
-    } catch (error) {
-      setChatHistory(prev => {
-        const newHistory = [...prev];
-        if (newHistory.length > 0) {
-          newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text: 'Error connecting to Nexus AI. Please check your API key and connection.' }] };
-        }
-        return newHistory;
-      });
-    } finally {
-      setIsChatStreaming(false);
+  try {
+    let fullAiResponse = '';
+    await chatWithAIStream(
+      userMsg,
+      historyForAI,
+      (text) => {
+        fullAiResponse = text;
+        setChatHistory(prev => {
+          const newHistory = [...prev];
+          if (newHistory.length > 0) {
+            newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text }] };
+          }
+          return newHistory;
+        });
+      },
+      userApiKey,
+      systemInstruction,
+      selectedModel
+    );
+
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    const matches = [...fullAiResponse.matchAll(codeBlockRegex)];
+    if (matches.length === 1 && userMsg.toLowerCase().includes('fix')) {
+      const suggestedCode = matches[0][2];
+      if (suggestedCode && activeFile) {
+        updateFile(activeFileId, { code: suggestedCode });
+        showToast('AI applied fix to active file ✅', 'success');
+      }
     }
-  };
+
+    saveChatMessageToFirestore('assistant', fullAiResponse);
+  } catch (error) {
+    setChatHistory(prev => {
+      const newHistory = [...prev];
+      if (newHistory.length > 0) {
+        newHistory[newHistory.length - 1] = { role: 'model', parts: [{ text: 'Error connecting to Nexus AI. Please check your API key and connection.' }] };
+      }
+      return newHistory;
+    });
+  } finally {
+    setIsChatStreaming(false);
+  }
+};
 
   const clearChatHistory = async () => {
     setChatHistory([]);
@@ -4322,6 +4431,25 @@ const handleExecuteCode = async () => {
           </div>
           
           <div className="flex items-center gap-3 ml-4 shrink-0">
+                   <button
+  onClick={buildCodebaseIndex}
+  disabled={isIndexing || !userApiKey}
+  className={cn(
+    "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-bold transition-all",
+    codebaseIndex
+      ? "bg-green-500/20 text-green-400 border border-green-500/30"
+      : "bg-white/5 text-text-secondary hover:bg-white/10"
+  )}
+  title={codebaseIndex ? `Indexed: ${codebaseIndex.symbols?.length} symbols` : "Index codebase for AI"}
+>
+  {isIndexing
+    ? <Loader2 className="w-3 h-3 animate-spin" />
+    : <Brain className="w-3 h-3" />
+  }
+  <span className="hidden sm:inline">
+    {isIndexing ? 'Indexing...' : codebaseIndex ? 'Indexed ✅' : 'Index AI'}
+  </span>
+</button>
             <button 
               onClick={() => setIsApiKeyModalOpen(true)}
               className={cn(
@@ -4466,6 +4594,18 @@ const handleExecuteCode = async () => {
                 )}
               </div>
             )}
+                   <button
+  onClick={handleDeploy}
+  disabled={isDeploying}
+  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-500 transition-all disabled:opacity-50"
+  title="Deploy project live"
+>
+  {isDeploying
+    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+    : <Rocket className="w-3.5 h-3.5" />
+  }
+  <span className="hidden sm:inline">Deploy</span>
+</button>
             <button 
               onClick={handleRun}
               className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
@@ -4572,37 +4712,15 @@ const handleExecuteCode = async () => {
               )}
             </AnimatePresence>
           {/* Replace your existing Monaco editor with this */}
-<Suspense fallback={
-  <div className="flex-1 flex items-center justify-center bg-[#1e1e1e]">
-    <div className="flex flex-col items-center gap-3">
-      <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-      <span className="text-[10px] text-zinc-500 uppercase tracking-widest">
-        Loading Editor...
-      </span>
-    </div>
-  </div>
-}>
-  <MonacoEditor
-    height="100%"
-    language={activeFile?.language || 'javascript'}
-    value={activeFile?.code || ''}
-    onChange={(value) => updateFile(activeFileId, { code: value || '' })}
-    theme={editorTheme}
-    options={{
-      fontSize: fontSize,
-      minimap: { enabled: false },
-      wordWrap: wordWrap ? 'on' : 'off',
-      lineNumbers: showLineNumbers ? 'on' : 'off',
-      scrollBeyondLastLine: false,
-      automaticLayout: true,
-      tabSize: 2,
-      suggestOnTriggerCharacters: true,
-      quickSuggestions: true,
-      formatOnPaste: true,
-      formatOnType: false,
-    }}
-  />
-</Suspense>
+<Editor
+  height="100%"
+  language={activeFile?.language || 'javascript'}
+  value={activeFile?.code || ''}
+  onChange={(value) => updateFile(activeFileId, { code: value || '' })}
+  theme="nexus-theme"
+  options={monacoOptions}
+  onMount={(editor, monaco) => handleEditorMount(editor, monaco, activeFileId)}
+/>
           </div>
         </div>
         ) : (
@@ -6124,6 +6242,112 @@ const handleExecuteCode = async () => {
                   Save Key
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+             {/* Deploy Modal */}
+      <AnimatePresence>
+        {showDeployModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            onClick={() => !isDeploying && setShowDeployModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="bg-bg-secondary border border-white/10 rounded-2xl p-8 w-full max-w-md shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              {isDeploying ? (
+                <div className="flex flex-col items-center gap-6 py-4">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-full bg-accent/20 flex items-center justify-center">
+                      <Rocket className="w-8 h-8 text-accent animate-bounce" />
+                    </div>
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                      className="absolute inset-0 border-2 border-accent border-t-transparent rounded-full"
+                    />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h3 className="font-bold text-white text-lg">Deploying your project...</h3>
+                    <p className="text-xs text-text-secondary opacity-60">
+                      Building and uploading files to the cloud
+                    </p>
+                  </div>
+                  <div className="w-full space-y-2">
+                    {['Preparing files', 'Building project', 'Uploading to CDN', 'Going live'].map((step, i) => (
+                      <motion.div
+                        key={step}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.5 }}
+                        className="flex items-center gap-3 text-xs"
+                      >
+                        <motion.div
+                          animate={{ scale: [1, 1.2, 1] }}
+                          transition={{ delay: i * 0.5, duration: 0.3 }}
+                          className="w-4 h-4 rounded-full bg-accent/20 flex items-center justify-center"
+                        >
+                          <div className="w-2 h-2 rounded-full bg-accent" />
+                        </motion.div>
+                        <span className="text-text-secondary">{step}</span>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              ) : deployUrl ? (
+                <div className="flex flex-col items-center gap-6 py-4">
+                  <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center">
+                    <Check className="w-8 h-8 text-green-400" />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <h3 className="font-bold text-white text-lg">🎉 Live!</h3>
+                    <p className="text-xs text-text-secondary opacity-60">
+                      Your project is now live at:
+                    </p>
+                  </div>
+                  <div className="w-full bg-black/30 border border-white/10 rounded-xl p-3 flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-accent shrink-0" />
+                    <span className="text-xs text-accent flex-1 truncate">{deployUrl}</span>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(deployUrl)}
+                      className="p-1 hover:bg-white/10 rounded"
+                    >
+                      <Copy className="w-3 h-3 text-text-secondary" />
+                    </button>
+                  </div>
+                  <div className="flex gap-3 w-full">
+                    <button
+                      onClick={() => window.open(deployUrl, '_blank')}
+                      className="flex-1 py-2.5 bg-accent text-accent-foreground rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Open Site
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(deployUrl);
+                        showToast('Link copied!', 'success');
+                      }}
+                      className="flex-1 py-2.5 bg-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/20"
+                    >
+                      Copy Link
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setShowDeployModal(false); setDeployUrl(''); }}
+                    className="text-xs text-text-secondary opacity-40 hover:opacity-70"
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : null}
             </motion.div>
           </motion.div>
         )}
