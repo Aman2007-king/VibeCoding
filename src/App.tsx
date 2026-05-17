@@ -4417,10 +4417,10 @@ const handleExecuteCode = async () => {
             </AnimatePresence>
           {/* Replace your existing Monaco editor with this */}
 <Suspense fallback={
-  <div className="flex-1 flex items-center justify-center bg-black/20">
+  <div className="flex-1 flex items-center justify-center bg-[#1e1e1e]">
     <div className="flex flex-col items-center gap-3">
-      <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-      <span className="text-[10px] text-text-secondary opacity-50 uppercase tracking-widest">
+      <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      <span className="text-[10px] text-zinc-500 uppercase tracking-widest">
         Loading Editor...
       </span>
     </div>
@@ -4434,7 +4434,7 @@ const handleExecuteCode = async () => {
     theme={editorTheme}
     options={{
       fontSize: fontSize,
-      minimap: { enabled: !isMobile },
+      minimap: { enabled: false },
       wordWrap: wordWrap ? 'on' : 'off',
       lineNumbers: showLineNumbers ? 'on' : 'off',
       scrollBeyondLastLine: false,
