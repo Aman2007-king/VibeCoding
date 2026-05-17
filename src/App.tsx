@@ -88,6 +88,7 @@ import confetti from 'canvas-confetti';
 import { cn } from './lib/utils';
 import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject, getGhostText, getSmartSuggestions, detectDependencies } from './services/geminiService';
 import { GoogleGenAI, Modality } from "@google/genai";
+import { io, Socket } from 'socket.io-client';
 import { Octokit } from "octokit";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -653,25 +654,8 @@ useEffect(() => {
     })
     .catch(() => {});
 }, []);
-  // Firestore Sync: Projects
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const q = query(collection(db, 'projects'), where('ownerId', '==', currentUser.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const projectData = snapshot.docs[0].data();
-        if (projectData.files) {
-          // Only update if files are different to avoid loops
-          // For simplicity in this demo, we'll just set them if they exist
-          // In a real app, you'd want a more robust sync strategy
-          // setFiles(projectData.files);
-        }
-      }
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'projects'));
-
-    return () => unsubscribe();
-  }, [currentUser]);
+  // Firestore Sync: Projects (disabled collection-level query - handled by load useEffect below)
+  // Note: Collection queries need special Firebase rules, using doc-level access instead
 
   // ✅ Auto-save project to Firestore every 30 seconds
   useEffect(() => {
@@ -688,8 +672,11 @@ useEffect(() => {
           updatedAt: Timestamp.now(),
         }, { merge: true });
         console.log('[AutoSave] Project saved to cloud');
-      } catch (err) {
-        console.error('[AutoSave] Failed:', err);
+      } catch (err: any) {
+        // Silently ignore permission errors - user may not have Firestore rules set up
+        if (!err?.message?.includes('permission')) {
+          console.error('[AutoSave] Failed:', err);
+        }
       }
     }, 30000);
     return () => clearInterval(autoSave);
@@ -733,7 +720,7 @@ useEffect(() => {
       if (history.length > 0) {
         setChatHistory(history);
       }
-    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${currentUser.uid}/chats`));
+    }, (err) => { console.warn('[Chat Sync] Firestore error (check rules):', err?.code); });
 
     return () => unsubscribe();
   }, [currentUser]);
@@ -853,6 +840,12 @@ const saveProjectToFirestore = async () => {
     aiInteractions: 0,
     healthScore: 85
   });
+
+  // ✅ Editor settings state
+  const [fontSize, setFontSize] = useState(14);
+  const [wordWrap, setWordWrap] = useState(true);
+  const [showLineNumbers, setShowLineNumbers] = useState(true);
+  const [editorTheme, setEditorTheme] = useState('nexus-theme');
 
   // Collaboration State
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -2258,7 +2251,7 @@ INSTRUCTIONS:
   }
 
   // Check API key
-  const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+  const apiKey = userApiKey;
   if (!apiKey) {
     showToast('Please set your Gemini API key first (click API Key button)', 'error');
     setIsApiKeyModalOpen(true);
@@ -5197,7 +5190,7 @@ const handleExecuteCode = async () => {
   language={activeFile?.language || 'javascript'}
   value={activeFile?.code || ''}
   onChange={(value) => updateFile(activeFileId, { code: value || '' })}
-  theme="nexus-theme"
+  theme={editorTheme}
   options={monacoOptions}
   onMount={(editor, monaco) => handleEditorMount(editor, monaco, activeFileId)}
 />
