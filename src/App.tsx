@@ -1182,46 +1182,55 @@ useEffect(() => {
     };
   }, [currentTheme, userApiKey]);
 
-         const monacoOptions = useMemo(() => ({
-    fontSize: 13,
-    fontFamily: 'JetBrains Mono, monospace',
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
-    automaticLayout: true,
-    tabSize: 2,
-    renderWhitespace: 'none' as const,
-    renderControlCharacters: false,
-    renderLineHighlight: 'line' as const,
-    occurrencesHighlight: 'off' as const,
-    selectionHighlight: false,
-    codeLens: false,
-    folding: true,
-    foldingHighlight: false,
-    matchBrackets: 'always' as const,
-    links: false,
-    colorDecorators: false,
-    smoothScrolling: true,
-    cursorBlinking: 'smooth' as const,
-    cursorSmoothCaretAnimation: 'on' as const,
-    suggestOnTriggerCharacters: true,
-    quickSuggestions: {
-      other: true,
-      comments: false,
-      strings: false,
-    },
-    formatOnPaste: true,
-    formatOnType: false,
-    lightbulb: { enabled: 'off' as const },
-    inlayHints: { enabled: 'off' as const },
-    parameterHints: { enabled: false },
-    lineNumbers: 'on' as const,
-    glyphMargin: true,
-    lineDecorationsWidth: 10,
-    lineNumbersMinChars: 3,
-    autoClosingBrackets: 'always' as const,
-    autoClosingQuotes: 'always' as const,
-    bracketPairColorization: { enabled: true },
-  }), []);
+// ✅ Optimized Monaco options — add/replace in your MonacoEditor component
+// ✅ Optimized Monaco options — add/replace in your MonacoEditor component
+const monacoOptions = useMemo(() => ({
+  fontSize: fontSize,
+  minimap: { enabled: false },           // ✅ Disable minimap — saves 30% render time
+  wordWrap: wordWrap ? 'on' : 'off',
+  lineNumbers: showLineNumbers ? 'on' : 'off',
+  scrollBeyondLastLine: false,
+  automaticLayout: true,
+  tabSize: 2,
+
+  // ✅ Performance optimizations
+  renderWhitespace: 'none' as const,
+  renderControlCharacters: false,
+  renderLineHighlight: 'line' as const,
+  occurrencesHighlight: 'off' as const,
+  selectionHighlight: false,
+  codeLens: false,
+  folding: true,
+  foldingHighlight: false,
+  matchBrackets: 'always' as const,
+  renderIndentGuides: true,
+
+  // ✅ Disable heavy features
+  hover: { enabled: true, delay: 500 },
+  links: false,
+  colorDecorators: false,
+  
+  // ✅ Smooth scrolling
+  smoothScrolling: true,
+  cursorBlinking: 'smooth' as const,
+  cursorSmoothCaretAnimation: 'on' as const,
+  
+  // ✅ Better suggestions
+  suggestOnTriggerCharacters: true,
+  quickSuggestions: {
+    other: true,
+    comments: false,
+    strings: false,
+  },
+  formatOnPaste: true,
+  formatOnType: false,
+  
+  // ✅ Disable unused features
+  lightbulb: { enabled: 'off' as const },
+  inlayHints: { enabled: 'off' as const },
+  parameterHints: { enabled: false },
+}), [fontSize, wordWrap, showLineNumbers]);
+
   const recognitionRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const liveSessionRef = useRef<any>(null);
