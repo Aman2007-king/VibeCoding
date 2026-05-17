@@ -845,7 +845,7 @@ const saveProjectToFirestore = async () => {
   const [fontSize, setFontSize] = useState(14);
   const [wordWrap, setWordWrap] = useState(true);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
-  const [editorTheme, setEditorTheme] = useState('nexus-theme');
+  const [editorTheme, setEditorTheme] = useState('vs-dark'); // Start with built-in theme, switch after nexus-theme is defined
 
   // Collaboration State
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -1615,6 +1615,7 @@ useEffect(() => {
         }
       });
       monaco.editor.setTheme('nexus-theme');
+      setEditorTheme('nexus-theme'); // ✅ Trigger re-render with correct theme
 
       // Register Inline Completions Provider (Ghost Text)
       provider = monaco.languages.registerInlineCompletionsProvider(['javascript', 'typescript', 'html', 'css'], {
@@ -3308,6 +3309,11 @@ ${jsFile.code.replace(/<\/script>/g, '<\\/script>')}</script>`);
     `;
     
     setPreviewContent(combined);
+    // ✅ Also create a blob URL version for better compatibility
+    try {
+      const oldBlobUrl = (window as any).__nexusBlobUrl;
+      if (oldBlobUrl) URL.revokeObjectURL(oldBlobUrl);
+    } catch(e) {}
     setDebuggerStatus('running');
     setPausedLine(null);
     setInspectedVariables({});
@@ -4767,7 +4773,7 @@ const handleExecuteCode = async () => {
                 srcDoc={previewContent}
                 title="preview"
                 className="w-full h-full border-none"
-                sandbox="allow-scripts allow-same-origin allow-modals allow-popups"
+                sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-pointer-lock"
               />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-text-secondary bg-bg-secondary">
@@ -5116,7 +5122,7 @@ const handleExecuteCode = async () => {
 
           {/* Single Editor View */}
           {files.length > 0 ? (
-            <div className="flex-1 flex flex-col bg-bg-primary overflow-hidden">
+            <div className="flex-1 flex flex-col bg-bg-primary overflow-hidden min-h-0">
               <div className="h-8 bg-bg-secondary border-b border-border-custom flex items-center px-4 justify-between z-20 shrink-0">
               <div className="flex items-center gap-3">
                 <span className="text-[10px] font-mono text-accent font-bold uppercase tracking-widest">{activeFile.name}</span>
@@ -5204,6 +5210,7 @@ const handleExecuteCode = async () => {
           {activeFile && (
             <Editor
               height="100%"
+              width="100%"
               language={activeFile.language || 'javascript'}
               value={activeFile.code || ''}
               onChange={(value) => updateFile(activeFileId, { code: value || '' })}
