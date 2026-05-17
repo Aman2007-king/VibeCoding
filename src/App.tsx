@@ -88,6 +88,7 @@ import confetti from 'canvas-confetti';
 import { cn } from './lib/utils';
 import { generateCode, generateCodeStream, debugCode, processVoiceCommand, manipulateCode, fastFix, chatWithAI, chatWithAIStream, generateProject, getGhostText, getSmartSuggestions, detectDependencies } from './services/geminiService';
 import { GoogleGenAI, Modality } from "@google/genai";
+import { io, Socket } from 'socket.io-client';
 import { Octokit } from "octokit";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -456,7 +457,6 @@ function App() {
          const [isDeploying, setIsDeploying] = useState(false);
 const [deployUrl, setDeployUrl] = useState('');
 const [showDeployModal, setShowDeployModal] = useState(false);
- const [showTemplateMarketplace, setShowTemplateMarketplace] = useState(false);        
 const [codebaseIndex, setCodebaseIndex] = useState<{
   symbols: { name: string; file: string; type: string; line: number }[];
   dependencies: string[];
@@ -511,14 +511,7 @@ const [isIndexing, setIsIndexing] = useState(false);
   const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
   const [floatingChatInput, setFloatingChatInput] = useState('');
   const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
-const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-const [showInstallBtn, setShowInstallBtn] = useState(false);
-   const aiModels = [
-    { id: 'gemini-2.0-flash',                   name: 'Gemini 2.0 Flash',   provider: 'Google', fast: true  },
-    { id: 'gemini-2.0-flash-thinking-exp',       name: 'Gemini Thinking',    provider: 'Google', fast: false },
-    { id: 'gemini-1.5-pro',                      name: 'Gemini 1.5 Pro',     provider: 'Google', fast: false },
-    { id: 'gemini-2.5-pro-preview-05-06',        name: 'Gemini 2.5 Pro',     provider: 'Google', fast: false },
-  ];      
+
   const availableModels = [
     { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', desc: 'Fastest & Balanced' },
     { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', desc: 'Most Capable & Reasoning' },
@@ -615,30 +608,6 @@ useEffect(() => {
 
   return () => clearInterval(keepAlive);
 }, []);
-
-         useEffect(() => {
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    setDeferredPrompt(e);
-    setShowInstallBtn(true);
-  });
-
-  window.addEventListener('appinstalled', () => {
-    setShowInstallBtn(false);
-    showToast('App installed! 🎉 Open from your home screen', 'success');
-  });
-}, []);
-
-const handleInstallApp = async () => {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  const { outcome } = await deferredPrompt.userChoice;
-  if (outcome === 'accepted') {
-    showToast('Installing VibeCoding...', 'success');
-    setDeferredPrompt(null);
-    setShowInstallBtn(false);
-  }
-};
 
          // ✅ Detect and notify about cold start
 useEffect(() => {
@@ -854,6 +823,12 @@ const saveProjectToFirestore = async () => {
     healthScore: 85
   });
 
+  // Editor settings state (required for monacoOptions)
+  const [fontSize, setFontSize] = useState(14);
+  const [wordWrap, setWordWrap] = useState(true);
+  const [showLineNumbers, setShowLineNumbers] = useState(true);
+  const [editorTheme, setEditorTheme] = useState('nexus-theme');
+
   // Collaboration State
   const [socket, setSocket] = useState<Socket | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, { fileId: number, position: any, color: string }>>({});
@@ -984,445 +959,6 @@ useEffect(() => {
   }, 5000);
   return () => clearTimeout(timer);
 }, [files.length, userApiKey]);
-
-// ✅ Template data
-const templates = [
-  {
-    id: 'react-todo',
-    name: 'React Todo App',
-    description: 'Full todo app with hooks, local storage and animations',
-    category: 'Frontend',
-    tags: ['React', 'TypeScript', 'Tailwind'],
-    icon: '⚛️',
-    files: [
-      {
-        name: 'index.html',
-        language: 'html',
-        code: `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Todo App</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-900 min-h-screen flex items-center justify-center">
-  <div id="root"></div>
-  <script src="app.js"></script>
-</body>
-</html>`
-      },
-      {
-        name: 'app.js',
-        language: 'javascript',
-        code: `let todos = JSON.parse(localStorage.getItem('todos') || '[]');
-
-function render() {
-  const root = document.getElementById('root');
-  root.innerHTML = \`
-    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-96">
-      <h1 class="text-2xl font-bold text-white mb-6">✅ Todo App</h1>
-      <div class="flex gap-2 mb-4">
-        <input id="input" type="text" placeholder="Add a todo..."
-          class="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm outline-none"
-          onkeydown="if(event.key==='Enter')addTodo()"/>
-        <button onclick="addTodo()"
-          class="bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-400">
-          Add
-        </button>
-      </div>
-      <ul class="space-y-2">
-        \${todos.map((t,i) => \`
-          <li class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg group">
-            <input type="checkbox" \${t.done?'checked':''} onchange="toggle(\${i})"
-              class="w-4 h-4 accent-emerald-500"/>
-            <span class="\${t.done?'line-through opacity-40':''} flex-1 text-white text-sm">\${t.text}</span>
-            <button onclick="remove(\${i})"
-              class="opacity-0 group-hover:opacity-100 text-red-400 text-xs">✕</button>
-          </li>
-        \`).join('')}
-      </ul>
-      <p class="text-gray-500 text-xs mt-4 text-center">
-        \${todos.filter(t=>t.done).length}/\${todos.length} completed
-      </p>
-    </div>
-  \`;
-}
-
-function addTodo() {
-  const input = document.getElementById('input');
-  if (!input.value.trim()) return;
-  todos.push({ text: input.value.trim(), done: false });
-  save(); input.value = '';
-}
-function toggle(i) { todos[i].done = !todos[i].done; save(); }
-function remove(i) { todos.splice(i, 1); save(); }
-function save() { localStorage.setItem('todos', JSON.stringify(todos)); render(); }
-
-render();`
-      }
-    ]
-  },
-  {
-    id: 'python-api',
-    name: 'Python REST API',
-    description: 'Simple REST API with Flask and JSON responses',
-    category: 'Backend',
-    tags: ['Python', 'Flask', 'REST'],
-    icon: '🐍',
-    files: [
-      {
-        name: 'app.py',
-        language: 'python',
-        code: `from flask import Flask, jsonify, request
-
-app = Flask(__name__)
-
-# Sample data
-users = [
-    {"id": 1, "name": "Alice", "email": "alice@example.com"},
-    {"id": 2, "name": "Bob",   "email": "bob@example.com"},
-]
-
-@app.route('/')
-def home():
-    return jsonify({"message": "Welcome to Nexus API", "version": "1.0"})
-
-@app.route('/users', methods=['GET'])
-def get_users():
-    return jsonify({"users": users, "count": len(users)})
-
-@app.route('/users/<int:user_id>', methods=['GET'])
-def get_user(user_id):
-    user = next((u for u in users if u["id"] == user_id), None)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-    return jsonify(user)
-
-@app.route('/users', methods=['POST'])
-def create_user():
-    data = request.get_json()
-    new_user = {
-        "id": len(users) + 1,
-        "name": data.get("name"),
-        "email": data.get("email")
-    }
-    users.append(new_user)
-    return jsonify(new_user), 201
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
-`
-      },
-      {
-        name: 'requirements.txt',
-        language: 'text',
-        code: `flask==3.0.0
-flask-cors==4.0.0`
-      }
-    ]
-  },
-  {
-    id: 'landing-page',
-    name: 'SaaS Landing Page',
-    description: 'Modern landing page with hero, features and CTA',
-    category: 'Frontend',
-    tags: ['HTML', 'CSS', 'JavaScript'],
-    icon: '🚀',
-    files: [
-      {
-        name: 'index.html',
-        language: 'html',
-        code: `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>SaaS Product</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-black text-white">
-  <!-- Nav -->
-  <nav class="flex items-center justify-between px-8 py-4 border-b border-white/10">
-    <span class="text-xl font-black tracking-tight">NEXUS</span>
-    <div class="flex gap-6 text-sm text-gray-400">
-      <a href="#" class="hover:text-white">Features</a>
-      <a href="#" class="hover:text-white">Pricing</a>
-      <a href="#" class="hover:text-white">Docs</a>
-    </div>
-    <button class="bg-emerald-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-400">
-      Get Started
-    </button>
-  </nav>
-
-  <!-- Hero -->
-  <section class="text-center py-32 px-8 max-w-4xl mx-auto">
-    <div class="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-4 py-1 text-xs text-emerald-400 mb-6">
-      ✨ Now with AI-powered features
-    </div>
-    <h1 class="text-6xl font-black leading-none mb-6">
-      Build faster with <span class="text-emerald-400">AI</span>
-    </h1>
-    <p class="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
-      The all-in-one platform to build, deploy, and scale your applications with the power of artificial intelligence.
-    </p>
-    <div class="flex gap-4 justify-center">
-      <button class="bg-emerald-500 text-black px-8 py-3 rounded-xl font-bold hover:bg-emerald-400 transition">
-        Start for free →
-      </button>
-      <button class="border border-white/20 px-8 py-3 rounded-xl font-bold hover:bg-white/5 transition">
-        Watch demo
-      </button>
-    </div>
-  </section>
-
-  <!-- Features -->
-  <section class="grid grid-cols-1 md:grid-cols-3 gap-6 px-8 pb-24 max-w-5xl mx-auto">
-    ${['⚡ Lightning Fast', '🔒 Secure by Default', '🤖 AI Powered'].map(f => `
-    <div class="bg-white/5 border border-white/10 rounded-2xl p-6">
-      <h3 class="font-bold text-lg mb-2">${f}</h3>
-      <p class="text-gray-400 text-sm">Built for modern teams who need speed, reliability, and intelligence in one platform.</p>
-    </div>`).join('')}
-  </section>
-</body>
-</html>`
-      }
-    ]
-  },
-  {
-    id: 'data-structures',
-    name: 'Data Structures (Python)',
-    description: 'Common data structures: Stack, Queue, LinkedList, BST',
-    category: 'Algorithm',
-    tags: ['Python', 'DSA', 'Interview'],
-    icon: '🏗️',
-    files: [
-      {
-        name: 'data_structures.py',
-        language: 'python',
-        code: `# ── Stack ─────────────────────────────────────────────
-class Stack:
-    def __init__(self): self.items = []
-    def push(self, item): self.items.append(item)
-    def pop(self): return self.items.pop() if self.items else None
-    def peek(self): return self.items[-1] if self.items else None
-    def is_empty(self): return len(self.items) == 0
-    def size(self): return len(self.items)
-
-# ── Queue ─────────────────────────────────────────────
-from collections import deque
-class Queue:
-    def __init__(self): self.items = deque()
-    def enqueue(self, item): self.items.append(item)
-    def dequeue(self): return self.items.popleft() if self.items else None
-    def is_empty(self): return len(self.items) == 0
-
-# ── Linked List ───────────────────────────────────────
-class Node:
-    def __init__(self, data): self.data = data; self.next = None
-
-class LinkedList:
-    def __init__(self): self.head = None
-    def append(self, data):
-        new = Node(data)
-        if not self.head: self.head = new; return
-        cur = self.head
-        while cur.next: cur = cur.next
-        cur.next = new
-    def display(self):
-        result, cur = [], self.head
-        while cur: result.append(str(cur.data)); cur = cur.next
-        return ' -> '.join(result)
-
-# ── Binary Search Tree ────────────────────────────────
-class BST:
-    def __init__(self): self.root = None
-    def insert(self, val):
-        def _insert(node, val):
-            if not node: return Node(val)
-            if val < node.data: node.next = _insert(node.next, val)
-            return node
-        self.root = _insert(self.root, val)
-    def search(self, val):
-        cur = self.root
-        while cur:
-            if val == cur.data: return True
-            cur = cur.next if val < cur.data else None
-        return False
-
-# ── Test ──────────────────────────────────────────────
-if __name__ == '__main__':
-    s = Stack()
-    s.push(1); s.push(2); s.push(3)
-    print("Stack pop:", s.pop())
-
-    q = Queue()
-    q.enqueue('a'); q.enqueue('b')
-    print("Queue dequeue:", q.dequeue())
-
-    ll = LinkedList()
-    ll.append(1); ll.append(2); ll.append(3)
-    print("LinkedList:", ll.display())
-`
-      }
-    ]
-  },
-  {
-    id: 'express-api',
-    name: 'Express.js REST API',
-    description: 'Node.js REST API with Express, middleware and routes',
-    category: 'Backend',
-    tags: ['Node.js', 'Express', 'REST'],
-    icon: '🟢',
-    files: [
-      {
-        name: 'server.js',
-        language: 'javascript',
-        code: `const express = require('express');
-const app = express();
-const PORT = 3000;
-
-app.use(express.json());
-
-// In-memory store
-let items = [
-  { id: 1, name: 'Item 1', price: 9.99 },
-  { id: 2, name: 'Item 2', price: 19.99 },
-];
-
-// Logger middleware
-app.use((req, res, next) => {
-  console.log(\`[\${new Date().toISOString()}] \${req.method} \${req.path}\`);
-  next();
-});
-
-app.get('/', (req, res) => {
-  res.json({ message: 'Express API Running', endpoints: ['/items', '/items/:id'] });
-});
-
-app.get('/items', (req, res) => res.json(items));
-
-app.get('/items/:id', (req, res) => {
-  const item = items.find(i => i.id === parseInt(req.params.id));
-  item ? res.json(item) : res.status(404).json({ error: 'Not found' });
-});
-
-app.post('/items', (req, res) => {
-  const item = { id: items.length + 1, ...req.body };
-  items.push(item);
-  res.status(201).json(item);
-});
-
-app.delete('/items/:id', (req, res) => {
-  const idx = items.findIndex(i => i.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Not found' });
-  items.splice(idx, 1);
-  res.json({ success: true });
-});
-
-app.listen(PORT, () => console.log(\`Server running at http://localhost:\${PORT}\`));
-`
-      }
-    ]
-  },
-  {
-    id: 'calculator',
-    name: 'Calculator App',
-    description: 'Fully functional calculator with keyboard support',
-    category: 'Frontend',
-    tags: ['HTML', 'CSS', 'JavaScript'],
-    icon: '🧮',
-    files: [
-      {
-        name: 'index.html',
-        language: 'html',
-        code: `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Calculator</title>
-  <style>
-    body { background:#111; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; font-family:system-ui; }
-    .calc { background:#1a1a1a; border-radius:20px; padding:20px; width:280px; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
-    .display { background:#000; border-radius:12px; padding:16px; text-align:right; margin-bottom:16px; }
-    .expr { color:#666; font-size:12px; min-height:18px; }
-    .val { color:#fff; font-size:32px; font-weight:300; word-break:break-all; }
-    .buttons { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
-    button { padding:18px; border:none; border-radius:12px; font-size:16px; cursor:pointer; transition:all 0.1s; }
-    button:active { transform:scale(0.95); }
-    .btn-op  { background:#333; color:#f90; }
-    .btn-num { background:#222; color:#fff; }
-    .btn-eq  { background:#10b981; color:#000; font-weight:bold; }
-    .btn-clr { background:#333; color:#f55; }
-    .btn-zero{ grid-column:span 2; }
-  </style>
-</head>
-<body>
-<div class="calc">
-  <div class="display">
-    <div class="expr" id="expr"></div>
-    <div class="val" id="val">0</div>
-  </div>
-  <div class="buttons">
-    <button class="btn-clr" onclick="clear_()">AC</button>
-    <button class="btn-op"  onclick="sign()">+/-</button>
-    <button class="btn-op"  onclick="pct()">%</button>
-    <button class="btn-op"  onclick="op('/')">÷</button>
-    <button class="btn-num" onclick="num('7')">7</button>
-    <button class="btn-num" onclick="num('8')">8</button>
-    <button class="btn-num" onclick="num('9')">9</button>
-    <button class="btn-op"  onclick="op('*')">×</button>
-    <button class="btn-num" onclick="num('4')">4</button>
-    <button class="btn-num" onclick="num('5')">5</button>
-    <button class="btn-num" onclick="num('6')">6</button>
-    <button class="btn-op"  onclick="op('-')">−</button>
-    <button class="btn-num" onclick="num('1')">1</button>
-    <button class="btn-num" onclick="num('2')">2</button>
-    <button class="btn-num" onclick="num('3')">3</button>
-    <button class="btn-op"  onclick="op('+')">+</button>
-    <button class="btn-num btn-zero" onclick="num('0')">0</button>
-    <button class="btn-num" onclick="dot()">.</button>
-    <button class="btn-eq"  onclick="eq()">=</button>
-  </div>
-</div>
-<script>
-  let cur='0', prev='', operator='', fresh=true;
-  const V=()=>document.getElementById('val');
-  const E=()=>document.getElementById('expr');
-  function upd(){ V().textContent=cur; }
-  function num(n){ if(fresh){cur=n;fresh=false;}else cur=cur==='0'?n:cur+n; upd(); }
-  function dot(){ if(!cur.includes('.')) cur+='.'; fresh=false; upd(); }
-  function op(o){ prev=cur;operator=o;fresh=true; E().textContent=cur+' '+o; }
-  function eq(){ if(!operator)return; const r=eval(prev+operator+cur); cur=String(parseFloat(r.toFixed(10))); E().textContent=''; fresh=true; upd(); }
-  function clear_(){ cur='0';prev='';operator='';fresh=true; E().textContent=''; upd(); }
-  function sign(){ cur=String(-parseFloat(cur)); upd(); }
-  function pct(){ cur=String(parseFloat(cur)/100); upd(); }
-</script>
-</body>
-</html>`
-      }
-    ]
-  },
-];
-
-// ✅ Apply template function
-const applyTemplate = (template: typeof templates[0]) => {
-  const newFiles = template.files.map((f, i) => ({
-    id: i + 1,
-    name: f.name,
-    code: f.code,
-    language: f.language,
-    type: 'file' as const,
-    parentId: null,
-  }));
-  setFiles(newFiles);
-  setActiveFileId(1);
-  setShowTemplateMarketplace(false);
-  showToast(`Template "${template.name}" loaded! 🎉`, 'success');
-  confetti({ particleCount: 80, spread: 70 });
-  setTimeout(() => handleRun(), 500);
-};
-         
   const searchNpm = async (query: string) => {
     if (!query) return;
     setIsSearchingNpm(true);
@@ -2258,7 +1794,7 @@ INSTRUCTIONS:
   }
 
   // Check API key
-  const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+  const apiKey = userApiKey;
   if (!apiKey) {
     showToast('Please set your Gemini API key first (click API Key button)', 'error');
     setIsApiKeyModalOpen(true);
@@ -4976,15 +4512,8 @@ const handleExecuteCode = async () => {
   {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
   <span className="hidden sm:inline">Execute</span>
 </button>
+            {/* Add these 3 buttons BEFORE the Run Project button */}
 
-<button
-  onClick={() => setShowTemplateMarketplace(true)}
-  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white hover:bg-white/20 transition-all"
-  title="Template Marketplace"
->
-  <Layers className="w-3.5 h-3.5" />
-  <span className="hidden sm:inline">Templates</span>
-</button>
 {/* Upload File */}
 <button
   onClick={handleUploadFile}
@@ -5076,16 +4605,6 @@ const handleExecuteCode = async () => {
   }
   <span className="hidden sm:inline">Deploy</span>
 </button>
- {showInstallBtn && (
-  <button
-    onClick={handleInstallApp}
-    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-all animate-pulse"
-    title="Install as mobile app"
-  >
-    <Download className="w-3.5 h-3.5" />
-    <span className="hidden sm:inline">Install App</span>
-  </button>
-)}
             <button 
               onClick={handleRun}
               className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
@@ -5197,7 +4716,7 @@ const handleExecuteCode = async () => {
   language={activeFile?.language || 'javascript'}
   value={activeFile?.code || ''}
   onChange={(value) => updateFile(activeFileId, { code: value || '' })}
-  theme="nexus-theme"
+  theme={editorTheme}
   options={monacoOptions}
   onMount={(editor, monaco) => handleEditorMount(editor, monaco, activeFileId)}
 />
@@ -5248,44 +4767,20 @@ const handleExecuteCode = async () => {
                 </button>
               ))}
             </div>
-           
-           <div className="hidden md:flex items-center gap-2">
-              <div className="relative group">
-                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/5 hover:bg-white/10 transition-all border border-white/10">
-                  <Cpu className="w-3 h-3 text-accent" />
-                  <span className="hidden sm:inline max-w-24 truncate">
-                    {aiModels.find(m => m.id === selectedModel)?.name || 'Select Model'}
-                  </span>
-                  <ChevronDown className="w-3 h-3 opacity-50" />
-                </button>
-                <div className="absolute right-0 top-full mt-1 bg-[#0d0d0e] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 w-56 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all">
-                  {aiModels.map(model => (
-                    <button
-                      key={model.id}
-                      onClick={() => setSelectedModel(model.id)}
-                      className={cn(
-                        "w-full flex items-center justify-between px-4 py-3 text-left text-xs hover:bg-white/5 transition-colors",
-                        selectedModel === model.id && "bg-accent/10 text-accent"
-                      )}
-                    >
-                      <div>
-                        <div className="font-bold">{model.name}</div>
-                        <div className="text-[10px] opacity-50">{model.provider}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {model.fast && (
-                          <span className="text-[8px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full font-bold">
-                            FAST
-                          </span>
-                        )}
-                        {selectedModel === model.id && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-accent" />
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
+
+            <div className="hidden md:flex items-center gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-widest opacity-40">Model:</span>
+              <select 
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[10px] font-mono text-accent focus:outline-none focus:border-accent/50 transition-all cursor-pointer"
+              >
+                {availableModels.map(m => (
+                  <option key={m.id} value={m.id} className="bg-bg-primary text-text-primary">
+                    {m.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -6750,99 +6245,6 @@ const handleExecuteCode = async () => {
           </motion.div>
         )}
       </AnimatePresence>
-          {/* Template Marketplace Modal */}
-{showTemplateMarketplace && (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-    onClick={() => setShowTemplateMarketplace(false)}
-  >
-    <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      className="bg-[#0d0d0e] border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col"
-      onClick={e => e.stopPropagation()}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
-            <Layers className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h2 className="font-black text-white uppercase tracking-tight">Template Marketplace</h2>
-            <p className="text-[10px] text-text-secondary opacity-50">
-              {templates.length} templates · Click to load instantly
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowTemplateMarketplace(false)}
-          className="p-2 hover:bg-white/5 rounded-lg transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Category filter */}
-      <div className="flex gap-2 px-6 py-3 border-b border-white/5 overflow-x-auto">
-        {['All', 'Frontend', 'Backend', 'Algorithm'].map(cat => (
-          <button
-            key={cat}
-            className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/5 hover:bg-accent/20 hover:text-accent border border-white/10 whitespace-nowrap transition-all"
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Templates grid */}
-      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {templates.map((template) => (
-            <motion.div
-              key={template.id}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="bg-white/5 border border-white/10 rounded-2xl p-5 cursor-pointer hover:border-accent/50 hover:bg-accent/5 transition-all group"
-              onClick={() => applyTemplate(template)}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="text-3xl">{template.icon}</div>
-                <span className="text-[9px] font-bold uppercase tracking-wider bg-white/10 px-2 py-1 rounded-full text-text-secondary">
-                  {template.category}
-                </span>
-              </div>
-              <h3 className="font-bold text-white text-sm mb-1 group-hover:text-accent transition-colors">
-                {template.name}
-              </h3>
-              <p className="text-[11px] text-text-secondary opacity-60 mb-3 leading-relaxed">
-                {template.description}
-              </p>
-              <div className="flex flex-wrap gap-1 mb-4">
-                {template.tags.map(tag => (
-                  <span key={tag} className="text-[9px] bg-accent/10 text-accent px-2 py-0.5 rounded-full font-bold">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-text-secondary opacity-40">
-                  {template.files.length} file{template.files.length > 1 ? 's' : ''}
-                </span>
-                <button className="text-[10px] font-bold text-accent opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  Use Template <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </motion.div>
-  </motion.div>
-)}   
              {/* Deploy Modal */}
       <AnimatePresence>
         {showDeployModal && (
