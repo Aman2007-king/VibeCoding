@@ -440,6 +440,16 @@ const VariableItem = ({ name, value, depth = 0 }: { name: string, value: any, de
     </div>
   );
 };
+
+loader.config({
+  paths: {
+    vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'
+  }
+});
+
+setTimeout(() => {
+  loader.init().catch(() => {});
+}, 3000);
 function App() {
   console.log("App component rendering...");
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
@@ -830,6 +840,21 @@ const saveProjectToFirestore = async () => {
   const [testResults, setTestResults] = useState<{ name: string, status: 'pass' | 'fail' | 'pending', error?: string }[]>([]);
   const [docsContent, setDocsContent] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+         const [collaborators, setCollaborators] = useState<{
+    id: string;
+    cursor?: { line: number; column: number };
+    color: string;
+    name: string;
+  }[]>([]);
+  const [isMultiplayerActive, setIsMultiplayerActive] = useState(false);
+  const userColor = useMemo(() => {
+    const colors = ['#10b981', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+    return colors[Math.floor(Math.random() * colors.length)];
+  }, []);
+  const [roomId, setRoomId] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('room') || '';
+  });
   const [projectVersions, setProjectVersions] = useState<{
   id: string;
   timestamp: string;
@@ -837,9 +862,17 @@ const saveProjectToFirestore = async () => {
 }[]>([]);
   const activeFile = useMemo(() => files.find(f => f.id === activeFileId) || files[0] || { id: 0, name: '', code: '', language: 'javascript', type: 'file', parentId: null }, [files, activeFileId]);
 
+const broadcastFileUpdate = useCallback((fileId: number, code: string) => {
+    if (!socket || !isMultiplayerActive) return;
+    socket.emit('file:update', { fileId, code });
+  }, [socket, isMultiplayerActive]);
+
   const updateFile = useCallback((id: number, updates: Partial<FileState>) => {
     setFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
-  }, []);
+    if (updates.code !== undefined && isMultiplayerActive) {
+      broadcastFileUpdate(id, updates.code);
+    }
+  }, [isMultiplayerActive, broadcastFileUpdate]);
 
   const buildProjectContext = useCallback(() => {
     return files
@@ -992,37 +1025,61 @@ const loadVersions = async () => {
     }
   };
 
-  useEffect(() => {
+useEffect(() => {
     const newSocket = io();
     setSocket(newSocket);
-
-    newSocket.on("init", (state) => {
-      console.log("Initial state received:", state);
-    });
-
-    newSocket.on("file:update", ({ fileId, code }) => {
-      setFiles(prev => prev.map(f => f.id === fileId ? { ...f, code } : f));
-    });
-
-    newSocket.on("cursor:move", ({ userId, fileId, position }) => {
-      setRemoteCursors(prev => ({
-        ...prev,
-        [userId]: { fileId, position, color: `hsl(${Math.random() * 360}, 70%, 50%)` }
-      }));
-    });
-
-    newSocket.on("user:leave", (userId) => {
-      setRemoteCursors(prev => {
-        const next = { ...prev };
-        delete next[userId];
-        return next;
-      });
-    });
-
     return () => {
       newSocket.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('file:update', ({ fileId, code, userId }: any) => {
+      if (userId === socket.id) return;
+      setFiles(prev => prev.map(f =>
+        f.id === fileId ? { ...f, code } : f
+      ));
+    });
+    socket.on('cursor:move', ({ userId, fileId, position, color, name }: any) => {
+      setCollaborators(prev => {
+        const existing = prev.find(c => c.id === userId);
+        if (existing) {
+          return prev.map(c => c.id === userId
+            ? { ...c, cursor: position, color, name }
+            : c
+          );
+        }
+        return [...prev, { id: userId, cursor: position, color, name }];
+      });
+    });
+    socket.on('user:join', ({ userId, name, color }: any) => {
+      setCollaborators(prev => {
+        if (prev.find(c => c.id === userId)) return prev;
+        return [...prev, { id: userId, name, color, cursor: undefined }];
+      });
+      showToast(`${name} joined the session`, 'success');
+    });
+    socket.on('user:leave', (userId: string) => {
+      setCollaborators(prev => {
+        const leaving = prev.find(c => c.id === userId);
+        if (leaving) showToast(`${leaving.name} left the session`, 'info');
+        return prev.filter(c => c.id !== userId);
+      });
+    });
+    socket.on('init', ({ files: serverFiles }: any) => {
+      if (serverFiles && Object.keys(serverFiles).length > 0) {
+        console.log('[Multiplayer] Received initial state');
+      }
+    });
+    return () => {
+      socket.off('file:update');
+      socket.off('cursor:move');
+      socket.off('user:join');
+      socket.off('user:leave');
+      socket.off('init');
+    };
+  }, [socket]);
 
   // Sync local changes to socket
   const handleFileChange = (fileId: number, code: string) => {
@@ -1125,6 +1182,46 @@ const loadVersions = async () => {
     };
   }, [currentTheme, userApiKey]);
 
+         const monacoOptions = useMemo(() => ({
+    fontSize: 13,
+    fontFamily: 'JetBrains Mono, monospace',
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    automaticLayout: true,
+    tabSize: 2,
+    renderWhitespace: 'none' as const,
+    renderControlCharacters: false,
+    renderLineHighlight: 'line' as const,
+    occurrencesHighlight: 'off' as const,
+    selectionHighlight: false,
+    codeLens: false,
+    folding: true,
+    foldingHighlight: false,
+    matchBrackets: 'always' as const,
+    links: false,
+    colorDecorators: false,
+    smoothScrolling: true,
+    cursorBlinking: 'smooth' as const,
+    cursorSmoothCaretAnimation: 'on' as const,
+    suggestOnTriggerCharacters: true,
+    quickSuggestions: {
+      other: true,
+      comments: false,
+      strings: false,
+    },
+    formatOnPaste: true,
+    formatOnType: false,
+    lightbulb: { enabled: 'off' as const },
+    inlayHints: { enabled: 'off' as const },
+    parameterHints: { enabled: false },
+    lineNumbers: 'on' as const,
+    glyphMargin: true,
+    lineDecorationsWidth: 10,
+    lineNumbersMinChars: 3,
+    autoClosingBrackets: 'always' as const,
+    autoClosingQuotes: 'always' as const,
+    bracketPairColorization: { enabled: true },
+  }), []);
   const recognitionRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const liveSessionRef = useRef<any>(null);
@@ -4310,6 +4407,56 @@ const handleExecuteCode = async () => {
   <Download className="w-3.5 h-3.5" />
   <span className="hidden sm:inline">Export ZIP</span>
 </button>
+                   <button
+              onClick={() => {
+                const id = roomId || Math.random().toString(36).substring(2, 8);
+                setRoomId(id);
+                const url = `${window.location.origin}?room=${id}`;
+                navigator.clipboard.writeText(url);
+                setIsMultiplayerActive(true);
+                socket?.emit('join:room', {
+                  roomId: id,
+                  name: currentUser?.displayName || 'Guest',
+                  color: userColor,
+                });
+                showToast('Room link copied! Share it to collaborate 🎉', 'success');
+                confetti({ particleCount: 60, spread: 70 });
+              }}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                isMultiplayerActive
+                  ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              )}
+              title="Share room for real-time collaboration"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {isMultiplayerActive ? `${collaborators.length + 1} Online` : 'Share'}
+              </span>
+              {isMultiplayerActive && (
+                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              )}
+            </button>
+            {isMultiplayerActive && collaborators.length > 0 && (
+              <div className="flex items-center -space-x-2">
+                {collaborators.slice(0, 4).map((c) => (
+                  <div
+                    key={c.id}
+                    title={c.name}
+                    className="w-6 h-6 rounded-full border-2 border-bg-primary flex items-center justify-center text-[8px] font-bold text-white uppercase"
+                    style={{ background: c.color }}
+                  >
+                    {c.name?.[0] || '?'}
+                  </div>
+                ))}
+                {collaborators.length > 4 && (
+                  <div className="w-6 h-6 rounded-full border-2 border-bg-primary bg-white/20 flex items-center justify-center text-[8px] font-bold">
+                    +{collaborators.length - 4}
+                  </div>
+                )}
+              </div>
+            )}
             <button 
               onClick={handleRun}
               className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
