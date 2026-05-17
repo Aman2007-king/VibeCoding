@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Nexus Forge — AI-powered cloud IDE" />
+    <!-- PWA -->
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#10b981" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="VibeCoding" />
+<link rel="apple-touch-icon" href="/icon-192.png" />
     <title>VibeCoding — AI IDE</title>
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -14,7 +21,7 @@
         font-family: system-ui, -apple-system, sans-serif;
         /* ✅ REMOVED overflow: hidden — this was hiding React! */
       }
-
+      
       #root { min-height: 100vh; }
 
       #splash {
