@@ -510,7 +510,9 @@ const [isIndexing, setIsIndexing] = useState(false);
   const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
   const [floatingChatInput, setFloatingChatInput] = useState('');
   const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
-
+const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+const [showInstallBtn, setShowInstallBtn] = useState(false);
+         
   const availableModels = [
     { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', desc: 'Fastest & Balanced' },
     { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', desc: 'Most Capable & Reasoning' },
@@ -607,6 +609,30 @@ useEffect(() => {
 
   return () => clearInterval(keepAlive);
 }, []);
+
+         useEffect(() => {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    setDeferredPrompt(e);
+    setShowInstallBtn(true);
+  });
+
+  window.addEventListener('appinstalled', () => {
+    setShowInstallBtn(false);
+    showToast('App installed! 🎉 Open from your home screen', 'success');
+  });
+}, []);
+
+const handleInstallApp = async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') {
+    showToast('Installing VibeCoding...', 'success');
+    setDeferredPrompt(null);
+    setShowInstallBtn(false);
+  }
+};
 
          // ✅ Detect and notify about cold start
 useEffect(() => {
@@ -4598,6 +4624,16 @@ const handleExecuteCode = async () => {
   }
   <span className="hidden sm:inline">Deploy</span>
 </button>
+ {showInstallBtn && (
+  <button
+    onClick={handleInstallApp}
+    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-all animate-pulse"
+    title="Install as mobile app"
+  >
+    <Download className="w-3.5 h-3.5" />
+    <span className="hidden sm:inline">Install App</span>
+  </button>
+)}
             <button 
               onClick={handleRun}
               className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-accent text-accent-foreground hover:opacity-90 transition-colors"
