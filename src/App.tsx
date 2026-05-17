@@ -804,7 +804,7 @@ const saveProjectToFirestore = async () => {
   const [view, setView] = useState<'ide' | 'blog' | 'about' | 'dashboard' | 'vercel-clone'>('ide');
   const [isPreviewFullScreen, setIsPreviewFullScreen] = useState(false);
   const [previewViewport, setPreviewViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
-  const [isDebuggerEnabled, setIsDebuggerEnabled] = useState(true);
+  const [isDebuggerEnabled, setIsDebuggerEnabled] = useState(false); // ✅ Disabled by default to prevent preview syntax errors
   const [userApiKey, setUserApiKey] = useState('');
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [steppingMode, setSteppingMode] = useState<'over' | 'into' | 'out' | null>(null);
@@ -1790,16 +1790,16 @@ const monacoOptions = useMemo(() => ({
 
     // Fetch saved keys if any (for guest or previous session)
     fetch('/api/keys')
-      .then(res => res.json())
+      .then(res => { if (!res.ok) return null; return res.json(); })
       .then(keyData => {
-        if (keyData.success) {
+        if (keyData?.success) {
           const geminiKey = keyData.keys.find((k: any) => k.key_name === 'GEMINI_API_KEY');
           if (geminiKey) {
             setUserApiKey(geminiKey.key_value);
           }
         }
       })
-      .catch(() => {});
+      .catch(() => {}); // Silent fail - user may not have Express session
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -3153,7 +3153,7 @@ const handleUploadFile = useCallback(() => {
         }
         
         if (isDebuggerEnabled) {
-          fileBody.push(`await window.nexusDebugger.sync(${file.id}, ${lineNum}, {}); ${line}`);
+          fileBody.push(`if(window.nexusDebugger){await window.nexusDebugger.sync(${file.id}, ${lineNum}, {});} ${line}`);
         } else {
           fileBody.push(line);
         }
@@ -3176,7 +3176,24 @@ const handleUploadFile = useCallback(() => {
       }
     `;
     // Final safety check for the combined content
-    const safeInstrumentedJs = finalJs.replace(/<\/script>/g, '<\\/script>');
+    const safeInstrumentedJs = finalJs;
+
+    // ✅ Fix: Replace external CSS/JS references in HTML with inline versions
+    let processedHtml = htmlCode;
+    
+    // Replace <link rel="stylesheet" href="..."> with inline CSS
+    files.filter(f => f.language === 'css' || f.name.endsWith('.css')).forEach(cssFile => {
+      const linkRegex = new RegExp(`<link[^>]*href=["'][^"']*${cssFile.name.replace('.', '\\.')}["'][^>]*>`, 'gi');
+      processedHtml = processedHtml.replace(linkRegex, `<style>/* ${cssFile.name} */
+${cssFile.code}</style>`);
+    });
+    
+    // Replace <script src="..."> with inline script (for non-module scripts)
+    files.filter(f => ['javascript','typescript'].includes(f.language) || f.name.endsWith('.js') || f.name.endsWith('.ts')).forEach(jsFile => {
+      const scriptRegex = new RegExp(`<script[^>]*src=["'][^"']*${jsFile.name.replace('.', '\\.')}["'][^>]*></script>`, 'gi');
+      processedHtml = processedHtml.replace(scriptRegex, `<script>/* ${jsFile.name} */
+${jsFile.code.replace(/<\/script>/g, '<\\/script>')}</script>`);
+    });
 
     const combined = `
       <!DOCTYPE html>
@@ -3282,7 +3299,7 @@ const handleUploadFile = useCallback(() => {
           </script>
         </head>
         <body>
-          ${htmlCode}
+          ${processedHtml}
           <script type="module">
             ${safeInstrumentedJs}
           </script>
@@ -4764,7 +4781,7 @@ const handleExecuteCode = async () => {
       </section>
 
       {/* Main Content - Editor & AI */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {view === 'dashboard' && (
           <div className="flex-1 bg-bg-primary p-8 custom-scrollbar">
             <div className="max-w-6xl mx-auto space-y-8">
@@ -5135,7 +5152,7 @@ const handleExecuteCode = async () => {
               </select>
             </div>
           </div>
-          <div className="flex-1 relative">
+          <div className="flex-1 relative bg-[#1e1e1e]">
             <AnimatePresence>
               {debuggerStatus === 'paused' && (
                 <motion.div 
@@ -5184,16 +5201,25 @@ const handleExecuteCode = async () => {
                 </motion.div>
               )}
             </AnimatePresence>
-          {/* Replace your existing Monaco editor with this */}
-<Editor
-  height="100%"
-  language={activeFile?.language || 'javascript'}
-  value={activeFile?.code || ''}
-  onChange={(value) => updateFile(activeFileId, { code: value || '' })}
-  theme={editorTheme}
-  options={monacoOptions}
-  onMount={(editor, monaco) => handleEditorMount(editor, monaco, activeFileId)}
-/>
+          {activeFile && (
+            <Editor
+              height="100%"
+              language={activeFile.language || 'javascript'}
+              value={activeFile.code || ''}
+              onChange={(value) => updateFile(activeFileId, { code: value || '' })}
+              theme={editorTheme}
+              options={monacoOptions}
+              onMount={(editor, monaco) => handleEditorMount(editor, monaco, activeFileId)}
+              loading={
+                <div className="flex-1 flex items-center justify-center bg-[#1e1e1e] h-full w-full">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    <span className="text-[11px] text-zinc-500 uppercase tracking-widest">Loading Editor...</span>
+                  </div>
+                </div>
+              }
+            />
+          )}
           </div>
         </div>
         ) : (
