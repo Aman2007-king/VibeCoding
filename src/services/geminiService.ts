@@ -1,6 +1,13 @@
 import { GoogleGenAI, Type, ThinkingLevel, GenerateContentResponse } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+// ✅ Lazy init — never crash on startup if API key is missing
+let _ai: GoogleGenAI | null = null;
+const getDefaultAI = (): GoogleGenAI | null => {
+  const key = (import.meta.env?.VITE_GEMINI_API_KEY as string) || "";
+  if (!key) return null;
+  if (!_ai) _ai = new GoogleGenAI({ apiKey: key });
+  return _ai;
+};
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -17,9 +24,15 @@ const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 1000): Pr
   }
 };
 
-const getAIClient = (userKey?: string) => {
+const getAIClient = (userKey?: string): GoogleGenAI => {
   if (userKey) return new GoogleGenAI({ apiKey: userKey });
-  return ai;
+  const defaultAI = getDefaultAI();
+  if (!defaultAI) {
+    // Return a dummy client — functions will fail gracefully
+    // User needs to provide API key via the UI
+    return new GoogleGenAI({ apiKey: "placeholder" });
+  }
+  return defaultAI;
 };
 
 export const generateProject = async (prompt: string, currentFiles: { name: string, code: string }[] = [], useThinking: boolean = false, userKey?: string, model: string = "gemini-3-flash-preview") => {
