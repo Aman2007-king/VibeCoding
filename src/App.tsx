@@ -511,15 +511,17 @@ const [isIndexing, setIsIndexing] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
   const [floatingChatInput, setFloatingChatInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
+  const [selectedModel, setSelectedModel] = useState('gemini-2.0-flash');
 const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 const [showInstallBtn, setShowInstallBtn] = useState(false);
-   const aiModels = [
-    { id: 'gemini-2.0-flash',                   name: 'Gemini 2.0 Flash',   provider: 'Google', fast: true  },
-    { id: 'gemini-2.0-flash-thinking-exp',       name: 'Gemini Thinking',    provider: 'Google', fast: false },
-    { id: 'gemini-1.5-pro',                      name: 'Gemini 1.5 Pro',     provider: 'Google', fast: false },
-    { id: 'gemini-2.5-pro-preview-05-06',        name: 'Gemini 2.5 Pro',     provider: 'Google', fast: false },
-  ];      
+  const aiModels = [
+  { id: 'gemini-2.0-flash',               name: 'Gemini 2.0 Flash',      provider: 'Google', fast: true  },
+  { id: 'gemini-2.0-flash-lite',          name: 'Gemini 2.0 Flash Lite', provider: 'Google', fast: true  },
+  { id: 'gemini-2.5-flash-preview-05-20', name: 'Gemini 2.5 Flash',      provider: 'Google', fast: true  },
+  { id: 'gemini-2.5-pro-preview-05-06',   name: 'Gemini 2.5 Pro',        provider: 'Google', fast: false },
+  { id: 'gemini-1.5-pro',                 name: 'Gemini 1.5 Pro',        provider: 'Google', fast: false },
+  { id: 'gemini-1.5-flash',               name: 'Gemini 1.5 Flash',      provider: 'Google', fast: true  },
+];
   const availableModels = [
     { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', desc: 'Fastest & Balanced' },
     { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', desc: 'Most Capable & Reasoning' },
@@ -1840,39 +1842,59 @@ const monacoOptions = useMemo(() => ({
     }
   };
 
-         const handleDeploy = async () => {
+ const handleDeploy = async () => {
   if (!currentUser) {
     showToast('Sign in to deploy', 'error');
     return;
   }
-  const hasHtml = files.some(f => f.name.endsWith('.html'));
-  if (!hasHtml) {
+
+  const htmlFile = files.find(f => f.name.endsWith('.html'));
+  if (!htmlFile) {
     showToast('Add an index.html file to deploy', 'error');
     return;
   }
+
   setIsDeploying(true);
   setShowDeployModal(true);
+
   try {
-    const response = await fetch('/api/deploy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        files: files.map(f => ({
-          name: f.name,
-          content: f.code,
-        })),
-        projectName: `nexus-${currentUser.uid.slice(0, 6)}-${Date.now()}`,
-        userId: currentUser.uid,
-      })
+    // Build single self-contained HTML with all CSS/JS inlined
+    let deployHtml = htmlFile.code;
+
+    // Inline all CSS files
+    files.filter(f => f.language === 'css' || f.name.endsWith('.css')).forEach(cssFile => {
+      const regex = new RegExp(
+        `<link[^>]*href=["'][^"']*\\.?/?${cssFile.name.replace('.', '\\.')}["'][^>]*>`, 'gi'
+      );
+      deployHtml = deployHtml.replace(regex, `<style>${cssFile.code}</style>`);
     });
-    const result = await response.json();
-    if (result.success && result.url) {
-      setDeployUrl(result.url);
-      showToast('🚀 Deployed successfully!', 'success');
-      confetti({ particleCount: 100, spread: 70 });
-    } else {
-      throw new Error(result.error || 'Deploy failed');
-    }
+
+    // Inline all JS files
+    files.filter(f => f.name.endsWith('.js') || f.name.endsWith('.ts')).forEach(jsFile => {
+      const regex = new RegExp(
+        `<script[^>]*src=["'][^"']*\\.?/?${jsFile.name.replace('.', '\\.')}["'][^>]*></script>`, 'gi'
+      );
+      deployHtml = deployHtml.replace(
+        regex,
+        `<script>${jsFile.code.replace(/<\/script>/g, '<\\/script>')}</script>`
+      );
+    });
+
+    // Download as single HTML file
+    const blob = new Blob([deployHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'index.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setDeployUrl('Downloaded! Drag the file to netlify.com/drop to go live instantly.');
+    showToast('📦 Ready! Drag index.html to netlify.com/drop', 'success');
+    confetti({ particleCount: 100, spread: 70 });
+
   } catch (err: any) {
     showToast(`Deploy failed: ${err.message}`, 'error');
     setShowDeployModal(false);
