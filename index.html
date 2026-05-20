@@ -104,6 +104,26 @@
         font-family: 'Inter', system-ui, sans-serif;
       }
 
+      /* ── Feature badges rendered on splash ── */
+      .splash-features {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: 320px;
+      }
+      .splash-feature-badge {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #10b981;
+        background: rgba(16,185,129,0.08);
+        border: 1px solid rgba(16,185,129,0.2);
+        border-radius: 99px;
+        padding: 4px 10px;
+        font-family: 'Inter', system-ui, sans-serif;
+      }
+
       @keyframes logoBounce {
         0%, 100% { transform: translateY(0) rotate(0deg); }
         50% { transform: translateY(-10px) rotate(2deg); }
@@ -131,6 +151,10 @@
         <span></span><span></span><span></span>
       </div>
       <div class="splash-status" id="splash-status">Waking up server...</div>
+
+      <!-- ── Feature badges ── -->
+      <div class="splash-features" id="splash-features"></div>
+
       <div class="splash-version">NEXUS FORGE v2.0</div>
     </div>
 
@@ -138,6 +162,91 @@
     <script type="module" src="/src/main.tsx"></script>
 
     <script>
+      // ─────────────────────────────────────────────────────────────────
+      // STARTER FILE TEMPLATES
+      // Consumed by the editor to seed a new project's file tree.
+      // ─────────────────────────────────────────────────────────────────
+      window.NEXUS_STARTER_TEMPLATES = [
+        {
+          name: 'index.html',
+          language: 'html',
+          code: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>✅ Todo App</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-gray-900 min-h-screen flex items-center justify-center p-4">
+  <div id="root"></div>
+  <script>
+let todos = JSON.parse(localStorage.getItem('nexus-todos') || '[]');
+function render() {
+  const root = document.getElementById('root');
+  root.innerHTML = '<div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">'
+    + '<h1 class="text-2xl font-bold text-white mb-6">✅ Todo App</h1>'
+    + '<div class="flex gap-2 mb-4">'
+    + '<input id="todo-input" type="text" placeholder="Add a todo..." '
+    + 'class="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm outline-none border border-gray-600 focus:border-emerald-500" '
+    + 'onkeydown="if(event.key===\'Enter\')addTodo()"/>'
+    + '<button onclick="addTodo()" class="bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-400">Add</button>'
+    + '</div>'
+    + '<ul class="space-y-2">'
+    + todos.map(function(t, i) {
+        return '<li class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg group">'
+          + '<input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="toggle(' + i + ')" class="w-4 h-4 accent-emerald-500 cursor-pointer"/>'
+          + '<span class="' + (t.done ? 'line-through opacity-40' : '') + ' flex-1 text-white text-sm">' + t.text + '</span>'
+          + '<button onclick="remove(' + i + ')" class="opacity-0 group-hover:opacity-100 text-red-400 text-xs font-bold">✕</button>'
+          + '</li>';
+      }).join('')
+    + '</ul>'
+    + '<p class="text-gray-500 text-xs mt-4 text-center">'
+    + todos.filter(function(t){ return t.done; }).length + '/' + todos.length + ' completed'
+    + '</p></div>';
+}
+function addTodo() {
+  var input = document.getElementById('todo-input');
+  if (!input.value.trim()) return;
+  todos.push({ text: input.value.trim(), done: false });
+  save(); input.value = '';
+}
+function toggle(i) { todos[i].done = !todos[i].done; save(); }
+function remove(i) { todos.splice(i, 1); save(); }
+function save() { localStorage.setItem('nexus-todos', JSON.stringify(todos)); render(); }
+render();
+  <\/script>
+</body>
+</html>`
+        },
+        {
+          name: 'app.js',
+          language: 'javascript',
+          code: `// app.js — Nexus Forge starter
+// This file is intentionally kept as-is so your own logic goes here.
+// It is also inlined into index.html via a <script> tag at build time.
+
+console.log('Nexus Forge app.js loaded');
+`
+        }
+      ];
+
+      // ─────────────────────────────────────────────────────────────────
+      // SPLASH — FEATURE BADGES
+      // ─────────────────────────────────────────────────────────────────
+      const SPLASH_FEATURES = ['⚡ Lightning Fast', '🔒 Secure by Default', '🤖 AI Powered'];
+
+      const featuresEl = document.getElementById('splash-features');
+      SPLASH_FEATURES.map(function(f) {
+        const badge = document.createElement('span');
+        badge.className = 'splash-feature-badge';
+        badge.textContent = f;
+        return badge;
+      }).forEach(function(el) { featuresEl.appendChild(el); });
+
+      // ─────────────────────────────────────────────────────────────────
+      // SPLASH — PROGRESS BAR
+      // ─────────────────────────────────────────────────────────────────
       const bar    = document.getElementById('splash-bar');
       const status = document.getElementById('splash-status');
       const splash = document.getElementById('splash');
@@ -153,8 +262,8 @@
         { pct: 95, ms: 8000, label: 'Finalizing...'             },
       ];
 
-      stages.forEach(({ pct, ms, label }) => {
-        setTimeout(() => {
+      stages.forEach(function({ pct, ms, label }) {
+        setTimeout(function() {
           if (!hidden) {
             bar.style.width = pct + '%';
             status.textContent = label;
@@ -167,13 +276,13 @@
         hidden = true;
         bar.style.width = '100%';
         status.textContent = 'Ready!';
-        setTimeout(() => {
+        setTimeout(function() {
           splash.classList.add('fade-out');
-          setTimeout(() => splash.classList.add('hidden'), 700);
+          setTimeout(function() { splash.classList.add('hidden'); }, 700);
         }, 300);
       }
 
-      const checkInterval = setInterval(() => {
+      const checkInterval = setInterval(function() {
         const root = document.getElementById('root');
         if (root && root.innerHTML.trim().length > 0) {
           clearInterval(checkInterval);
@@ -181,7 +290,7 @@
         }
       }, 200);
 
-      const observer = new MutationObserver(() => {
+      const observer = new MutationObserver(function() {
         const root = document.getElementById('root');
         if (root && root.children.length > 0) {
           observer.disconnect();
@@ -191,7 +300,7 @@
       });
       observer.observe(document.getElementById('root'), { childList: true, subtree: true });
 
-      setTimeout(() => {
+      setTimeout(function() {
         clearInterval(checkInterval);
         observer.disconnect();
         hideSplash();
