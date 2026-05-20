@@ -4,26 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Nexus Forge — AI-powered cloud IDE" />
-    <!-- PWA -->
-<link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#10b981" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="VibeCoding" />
-<link rel="apple-touch-icon" href="/icon-192.png" />
-    <title>Nexus Forge: AI-Powered Full-Stack IDE</title>
+    <title>VibeCoding — AI IDE</title>
     <style>
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
       body {
-        background: #0A0A0B;
+        background: #050505;
         color: #fff;
         font-family: system-ui, -apple-system, sans-serif;
         overflow: hidden;
       }
-      
-      #root { height: 100vh; }
 
+      #root { min-height: 100vh; }
+
+      /* ── Loader ── */
       #splash {
         position: fixed; inset: 0;
         background: #050505;
@@ -40,10 +34,7 @@
         pointer-events: none;
       }
 
-      #splash.hidden {
-        display: none;
-      }
-
+      /* Logo */
       .splash-logo {
         width: 72px; height: 72px;
         background: #10b981;
@@ -53,13 +44,13 @@
         animation: logoBounce 1.2s ease-in-out infinite;
       }
 
+      /* Progress bar */
       .splash-bar-wrap {
         width: 220px; height: 3px;
         background: #1a1a1a;
         border-radius: 99px;
         overflow: hidden;
       }
-
       .splash-bar-fill {
         height: 100%;
         background: linear-gradient(90deg, #10b981, #34d399);
@@ -68,14 +59,17 @@
         transition: width 0.4s ease;
       }
 
+      /* Status text */
       .splash-status {
         font-size: 11px;
         letter-spacing: 0.25em;
         text-transform: uppercase;
         color: #52525b;
         min-height: 16px;
+        transition: opacity 0.3s;
       }
 
+      /* Dots */
       .splash-dots {
         display: flex; gap: 6px;
       }
@@ -89,6 +83,7 @@
       .splash-dots span:nth-child(2) { animation-delay: 0.2s; }
       .splash-dots span:nth-child(3) { animation-delay: 0.4s; }
 
+      /* Version badge */
       .splash-version {
         position: absolute;
         bottom: 24px;
@@ -109,6 +104,7 @@
   </head>
 
   <body>
+    <!-- Splash screen shown before React mounts -->
     <div id="splash">
       <div class="splash-logo">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
@@ -117,13 +113,19 @@
           <polyline points="8 6 2 12 8 18"/>
         </svg>
       </div>
+
       <div class="splash-bar-wrap">
         <div class="splash-bar-fill" id="splash-bar"></div>
       </div>
+
       <div class="splash-dots">
         <span></span><span></span><span></span>
       </div>
-      <div class="splash-status" id="splash-status">Waking up server...</div>
+
+      <div class="splash-status" id="splash-status">
+        Waking up server...
+      </div>
+
       <div class="splash-version">NEXUS FORGE v2.0</div>
     </div>
 
@@ -134,8 +136,8 @@
       const bar    = document.getElementById('splash-bar');
       const status = document.getElementById('splash-status');
       const splash = document.getElementById('splash');
-      let hidden = false;
 
+      // Realistic loading stages with timing
       const stages = [
         { pct: 8,  ms: 0,    label: 'Waking up server...'       },
         { pct: 20, ms: 800,  label: 'Loading runtime...'        },
@@ -148,54 +150,39 @@
 
       stages.forEach(({ pct, ms, label }) => {
         setTimeout(() => {
-          if (!hidden) {
-            bar.style.width = pct + '%';
+          if (!splash.classList.contains('fade-out')) {
+            bar.style.width    = pct + '%';
             status.textContent = label;
           }
         }, ms);
       });
 
+      // Hide splash once React is ready
       function hideSplash() {
-        if (hidden) return;
-        hidden = true;
-        bar.style.width = '100%';
+        bar.style.width    = '100%';
         status.textContent = 'Ready!';
         setTimeout(() => {
           splash.classList.add('fade-out');
-          setTimeout(() => {
-            splash.classList.add('hidden');
-          }, 700);
+          setTimeout(() => splash.remove(), 700);
         }, 300);
       }
 
-      // ✅ More reliable detection — check every 200ms
-      const checkInterval = setInterval(() => {
-        const root = document.getElementById('root');
-        if (root && root.innerHTML.trim().length > 0) {
-          clearInterval(checkInterval);
-          hideSplash();
-        }
-      }, 200);
-
-      // ✅ Also use MutationObserver as backup
+      // Watch for React root to mount
       const observer = new MutationObserver(() => {
         const root = document.getElementById('root');
         if (root && root.children.length > 0) {
           observer.disconnect();
-          clearInterval(checkInterval);
           hideSplash();
         }
       });
-      observer.observe(document.getElementById('root'), {
-        childList: true, subtree: true
-      });
 
-      // ✅ Hard timeout 20s
-      setTimeout(() => {
-        clearInterval(checkInterval);
-        observer.disconnect();
-        hideSplash();
-      }, 20000);
+      observer.observe(
+        document.getElementById('root'),
+        { childList: true, subtree: true }
+      );
+
+      // Safety timeout — hide after 15s no matter what
+      setTimeout(hideSplash, 15000);
     </script>
   </body>
 </html>
