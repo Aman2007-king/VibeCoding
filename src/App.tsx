@@ -511,17 +511,17 @@ const [isIndexing, setIsIndexing] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
   const [floatingChatInput, setFloatingChatInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-2.0-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-2.0-flash'); // ✅ Valid model ID
 const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 const [showInstallBtn, setShowInstallBtn] = useState(false);
   const aiModels = [
-  { id: 'gemini-2.0-flash',               name: 'Gemini 2.0 Flash',      provider: 'Google', fast: true  },
-  { id: 'gemini-2.0-flash-lite',          name: 'Gemini 2.0 Flash Lite', provider: 'Google', fast: true  },
-  { id: 'gemini-2.5-flash-preview-05-20', name: 'Gemini 2.5 Flash',      provider: 'Google', fast: true  },
-  { id: 'gemini-2.5-pro-preview-05-06',   name: 'Gemini 2.5 Pro',        provider: 'Google', fast: false },
-  { id: 'gemini-1.5-pro',                 name: 'Gemini 1.5 Pro',        provider: 'Google', fast: false },
-  { id: 'gemini-1.5-flash',               name: 'Gemini 1.5 Flash',      provider: 'Google', fast: true  },
-];
+    { id: 'gemini-2.0-flash',              name: 'Gemini 2.0 Flash',        provider: 'Google', fast: true  },
+    { id: 'gemini-2.0-flash-lite',         name: 'Gemini 2.0 Flash Lite',   provider: 'Google', fast: true  },
+    { id: 'gemini-2.5-flash-preview-05-20',name: 'Gemini 2.5 Flash',        provider: 'Google', fast: true  },
+    { id: 'gemini-2.5-pro-preview-05-06',  name: 'Gemini 2.5 Pro',          provider: 'Google', fast: false },
+    { id: 'gemini-1.5-pro',                name: 'Gemini 1.5 Pro',          provider: 'Google', fast: false },
+    { id: 'gemini-1.5-flash',              name: 'Gemini 1.5 Flash',        provider: 'Google', fast: true  },
+  ];      
   const availableModels = [
     { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', desc: 'Fastest & Balanced' },
     { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', desc: 'Most Capable & Reasoning' },
@@ -998,12 +998,58 @@ const templates = [
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Todo App</title>
+  <title>✅ Todo App</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-900 min-h-screen flex items-center justify-center">
+<body class="bg-gray-900 min-h-screen flex items-center justify-center p-4">
   <div id="root"></div>
-  <script src="app.js"></script>
+  <script>
+let todos = JSON.parse(localStorage.getItem('nexus-todos') || '[]');
+
+function render() {
+  const root = document.getElementById('root');
+  root.innerHTML = \\`
+    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">
+      <h1 class="text-2xl font-bold text-white mb-6">✅ Todo App</h1>
+      <div class="flex gap-2 mb-4">
+        <input id="todo-input" type="text" placeholder="Add a todo..."
+          class="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm outline-none border border-gray-600 focus:border-emerald-500"
+          onkeydown="if(event.key==='Enter')addTodo()"/>
+        <button onclick="addTodo()"
+          class="bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-400 transition">
+          Add
+        </button>
+      </div>
+      <ul class="space-y-2">
+        \\${todos.map((t,i) => \\`
+          <li class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg group">
+            <input type="checkbox" \\${t.done?'checked':''} onchange="toggle(\\${i})"
+              class="w-4 h-4 accent-emerald-500 cursor-pointer"/>
+            <span class="\\${t.done?'line-through opacity-40':''} flex-1 text-white text-sm">\\${t.text}</span>
+            <button onclick="remove(\\${i})"
+              class="opacity-0 group-hover:opacity-100 text-red-400 text-xs font-bold transition">✕</button>
+          </li>
+        \\`).join('')}
+      </ul>
+      <p class="text-gray-500 text-xs mt-4 text-center">
+        \\${todos.filter(t=>t.done).length}/\\${todos.length} completed
+      </p>
+    </div>
+  \\`;
+}
+
+function addTodo() {
+  const input = document.getElementById('todo-input');
+  if (!input.value.trim()) return;
+  todos.push({ text: input.value.trim(), done: false });
+  save(); input.value = '';
+}
+function toggle(i) { todos[i].done = !todos[i].done; save(); }
+function remove(i) { todos.splice(i, 1); save(); }
+function save() { localStorage.setItem('nexus-todos', JSON.stringify(todos)); render(); }
+
+render();
+  </script>
 </body>
 </html>`
       },
@@ -1273,7 +1319,11 @@ if __name__ == '__main__':
       {
         name: 'server.js',
         language: 'javascript',
-        code: `const express = require('express');
+        code: `// ✅ Express.js REST API
+// Run this with: node server.js
+// Then test with: http://localhost:3000
+
+const express = require('express');
 const app = express();
 const PORT = 3000;
 
@@ -1842,7 +1892,7 @@ const monacoOptions = useMemo(() => ({
     }
   };
 
- const handleDeploy = async () => {
+const handleDeploy = async () => {
   if (!currentUser) {
     showToast('Sign in to deploy', 'error');
     return;
@@ -1858,50 +1908,47 @@ const monacoOptions = useMemo(() => ({
   setShowDeployModal(true);
 
   try {
-    // Build single self-contained HTML with all CSS/JS inlined
+    // Build single self-contained HTML with all CSS and JS inlined
     let deployHtml = htmlFile.code;
 
-    // Inline all CSS files
     files.filter(f => f.language === 'css' || f.name.endsWith('.css')).forEach(cssFile => {
-      const regex = new RegExp(
-        `<link[^>]*href=["'][^"']*\\.?/?${cssFile.name.replace('.', '\\.')}["'][^>]*>`, 'gi'
-      );
-      deployHtml = deployHtml.replace(regex, `<style>${cssFile.code}</style>`);
+      const regex = new RegExp('<link[^>]*href=["\'][^"\']*' + cssFile.name.replace('.', '\\.') + '["\'][^>]*>', 'gi');
+      deployHtml = deployHtml.replace(regex, '<style>' + cssFile.code + '</style>');
     });
 
-    // Inline all JS files
     files.filter(f => f.name.endsWith('.js') || f.name.endsWith('.ts')).forEach(jsFile => {
-      const regex = new RegExp(
-        `<script[^>]*src=["'][^"']*\\.?/?${jsFile.name.replace('.', '\\.')}["'][^>]*></script>`, 'gi'
-      );
-      deployHtml = deployHtml.replace(
-        regex,
-        `<script>${jsFile.code.replace(/<\/script>/g, '<\\/script>')}</script>`
-      );
+      const safeCode = jsFile.code.replace(/<\/script>/g, '<\/script>');
+      const regex = new RegExp('<script[^>]*src=["\'][^"\']*' + jsFile.name.replace('.', '\\.') + '["\'][^>]*><\/script>', 'gi');
+      deployHtml = deployHtml.replace(regex, '<script>' + safeCode + '</script>');
     });
 
-    // Download as single HTML file
+    // Download as self-contained HTML file
     const blob = new Blob([deployHtml], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'index.html';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = 'index.html';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+    }, 200);
 
-    setDeployUrl('Downloaded! Drag the file to netlify.com/drop to go live instantly.');
-    showToast('📦 Ready! Drag index.html to netlify.com/drop', 'success');
+    setDeployUrl('https://app.netlify.com/drop');
+    showToast('📦 Downloaded! Now drag index.html to Netlify Drop', 'success');
     confetti({ particleCount: 100, spread: 70 });
 
   } catch (err: any) {
-    showToast(`Deploy failed: ${err.message}`, 'error');
+    console.error('Deploy error:', err);
+    showToast('Deploy failed - try Export ZIP instead', 'error');
     setShowDeployModal(false);
   } finally {
     setIsDeploying(false);
   }
 };
+
  const handleMagicRefactor = async () => {
   if (!activeFile) return;
   setIsGenerating(true);
@@ -2516,9 +2563,24 @@ const handleDownloadProject = useCallback(async () => {
   }
 
   try {
-    // Dynamically import JSZip
-    const JSZip = (await import('jszip')).default;
-    const zip = new JSZip();
+    // ✅ Import JSZip - ensure it's available
+    let JSZipLib: any;
+    try {
+      JSZipLib = (await import('jszip')).default;
+    } catch(importErr) {
+      // Fallback: download as individual files if JSZip fails
+      files.filter(f => f.type === 'file').forEach(file => {
+        const blob = new Blob([file.code], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = file.name; a.style.display = 'none';
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+      });
+      showToast(`Downloaded ${files.length} files individually!`, 'success');
+      return;
+    }
+    const zip = new JSZipLib();
 
     // Add all files to zip
     files.forEach(file => {
@@ -2563,17 +2625,24 @@ const handleDownloadFile = useCallback(() => {
     return;
   }
 
-  const blob = new Blob([activeFile.code], { type: 'text/plain' });
+  // ✅ Fixed: proper MIME type based on file extension
+  const ext = activeFile.name.split('.').pop()?.toLowerCase() || '';
+  const mimeTypes: Record<string, string> = {
+    html: 'text/html', css: 'text/css', js: 'text/javascript',
+    ts: 'text/typescript', json: 'application/json', py: 'text/x-python',
+    md: 'text/markdown', txt: 'text/plain',
+  };
+  const mime = mimeTypes[ext] || 'text/plain';
+  const blob = new Blob([activeFile.code], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = activeFile.name;
+  a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
-  showToast(`Downloaded ${activeFile.name}!`, 'success');
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  showToast(\`Downloaded \${activeFile.name}!\`, 'success');
 }, [activeFile]);
 
 // ✅ Upload file from computer
@@ -3217,6 +3286,21 @@ ${cssFile.code}</style>`);
       processedHtml = processedHtml.replace(scriptRegex, `<script>/* ${jsFile.name} */
 ${jsFile.code.replace(/<\/script>/g, '<\\/script>')}</script>`);
     });
+
+    // ✅ For HTML files with inline scripts, use directly (no module wrapping)
+    const isHtmlOnly = files.every(f => 
+      f.language === 'html' || f.language === 'css' || 
+      f.name.endsWith('.html') || f.name.endsWith('.css')
+    );
+    
+    if (isHtmlOnly && processedHtml && processedHtml.includes('<!DOCTYPE')) {
+      setPreviewContent(processedHtml);
+      setDebuggerStatus('running');
+      setPausedLine(null);
+      setInspectedVariables({});
+      if (showConfetti) confetti({ particleCount: 40, spread: 70, origin: { y: 0.8 } });
+      return;
+    }
 
     const combined = `
       <!DOCTYPE html>
@@ -6969,11 +7053,18 @@ const handleExecuteCode = async () => {
                   </div>
                   <div className="flex gap-3 w-full">
                     <button
-                      onClick={() => window.open(deployUrl, '_blank')}
+                      onClick={() => {
+                        if (deployUrl.startsWith('http')) {
+                          window.open(deployUrl, '_blank');
+                        } else {
+                          navigator.clipboard.writeText(deployUrl);
+                          showToast('Instructions copied!', 'info');
+                        }
+                      }}
                       className="flex-1 py-2.5 bg-accent text-accent-foreground rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      Open Site
+                      {deployUrl.startsWith('http') ? 'Open Site' : 'Copy Instructions'}
                     </button>
                     <button
                       onClick={() => {
