@@ -1029,33 +1029,6 @@ function render() {
   html += '</p></div>';
   root.innerHTML = html;
 }
-      <h1 class="text-2xl font-bold text-white mb-6">✅ Todo App</h1>
-      <div class="flex gap-2 mb-4">
-        <input id="todo-input" type="text" placeholder="Add a todo..."
-          class="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm outline-none border border-gray-600 focus:border-emerald-500"
-          onkeydown="if(event.key==='Enter')addTodo()"/>
-        <button onclick="addTodo()"
-          class="bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-400 transition">
-          Add
-        </button>
-      </div>
-      <ul class="space-y-2">
-        \\${todos.map((t,i) => \\`
-          <li class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg group">
-            <input type="checkbox" \\${t.done?'checked':''} onchange="toggle(\\${i})"
-              class="w-4 h-4 accent-emerald-500 cursor-pointer"/>
-            <span class="\\${t.done?'line-through opacity-40':''} flex-1 text-white text-sm">\\${t.text}</span>
-            <button onclick="remove(\\${i})"
-              class="opacity-0 group-hover:opacity-100 text-red-400 text-xs font-bold transition">✕</button>
-          </li>
-        \\`).join('')}
-      </ul>
-      <p class="text-gray-500 text-xs mt-4 text-center">
-        \\${todos.filter(t=>t.done).length}/\\${todos.length} completed
-      </p>
-    </div>
-  \\`;
-}
 
 function addTodo() {
   const input = document.getElementById('todo-input');
