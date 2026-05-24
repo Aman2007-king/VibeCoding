@@ -1007,9 +1007,28 @@ const templates = [
 let todos = JSON.parse(localStorage.getItem('nexus-todos') || '[]');
 
 function render() {
-  const root = document.getElementById('root');
-  root.innerHTML = \\`
-    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">
+  var root = document.getElementById('root');
+  var html = '<div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">';
+  html += '<h1 class="text-2xl font-bold text-white mb-6">Todo App</h1>';
+  html += '<div class="flex gap-2 mb-4">';
+  html += '<input id="todo-input" type="text" placeholder="Add a todo..." ';
+  html += 'class="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm outline-none border border-gray-600" ';
+  html += 'onkeydown="if(event.key===\'Enter\')addTodo()"/>';
+  html += '<button onclick="addTodo()" class="bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold">Add</button>';
+  html += '</div><ul class="space-y-2">';
+  html += todos.map(function(t, i) {
+    return '<li class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg group">'
+      + '<input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="toggle(' + i + ')" class="w-4 h-4 accent-emerald-500"/>'
+      + '<span class="' + (t.done ? 'line-through opacity-40' : '') + ' flex-1 text-white text-sm">' + t.text + '</span>'
+      + '<button onclick="remove(' + i + ')" class="text-red-400 text-xs font-bold">x</button>'
+      + '</li>';
+  }).join('');
+  html += '</ul>';
+  html += '<p class="text-gray-500 text-xs mt-4 text-center">';
+  html += todos.filter(function(t){ return t.done; }).length + '/' + todos.length + ' completed';
+  html += '</p></div>';
+  root.innerHTML = html;
+}
       <h1 class="text-2xl font-bold text-white mb-6">✅ Todo App</h1>
       <div class="flex gap-2 mb-4">
         <input id="todo-input" type="text" placeholder="Add a todo..."
@@ -1058,7 +1077,7 @@ render();
         language: 'javascript',
         code: `let todos = JSON.parse(localStorage.getItem('todos') || '[]');
 
-function render() {
+
   const root = document.getElementById('root');
   root.innerHTML = \`
     <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-96">
