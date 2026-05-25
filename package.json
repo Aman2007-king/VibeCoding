@@ -10,7 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "start": "node server.ts",
-    "render-build": "sudo apt-get install -y g++ gcc default-jdk || true && npm install && vite build"
+    "render-build": "apt-get install -y g++ gcc default-jdk 2>/dev/null || true && npm install && vite build"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
