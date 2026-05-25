@@ -2634,7 +2634,7 @@ const handleDownloadFile = useCallback(() => {
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-  showToast(\`Downloaded \${activeFile.name}!\`, 'success');
+  showToast(`Downloaded ${activeFile.name}!`, 'success');
 }, [activeFile]);
 
 // ✅ Upload file from computer
