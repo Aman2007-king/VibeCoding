@@ -14,16 +14,11 @@ import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import crypto from "crypto";
 import validator from "validator";
-import { exec } from "child_process";
-import { promisify } from "util";
-import os from "os";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const execAsync = promisify(exec);
 
 // Encryption Utility for sensitive data
 const ENCRYPTION_KEY = (process.env.ENCRYPTION_KEY || 'nexus_forge_encryption_key_32_chars_long_!!!').padEnd(32).slice(0, 32);
@@ -46,6 +41,88 @@ function decrypt(text: string) {
   decrypted = Buffer.concat([decrypted, decipher.final()]);
   return decrypted.toString();
 }
+
+// ─── Sandboxed Code Execution (Piston) ─────────────────────────────────────
+// We never execute user-submitted Python/JS locally on this server — that
+// would give arbitrary code access to this process's filesystem and env
+// vars (DB file, OAuth secrets, encryption key, etc). Instead we send it to
+// Piston (https://github.com/engineer-man/piston), a purpose-built sandboxed
+// execution engine. Each run happens in an isolated container with no
+// access to this server at all.
+//
+// PISTON_API_URL defaults to the public instance. For heavier production
+// traffic, self-host Piston (Docker) and point this at your own URL —
+// see the README in their repo.
+const PISTON_API_URL = process.env.PISTON_API_URL || "https://emkc.org/api/v2/piston";
+
+let pistonRuntimesCache: { language: string; version: string; aliases?: string[] }[] | null = null;
+let pistonRuntimesFetchedAt = 0;
+
+async function getPistonVersion(language: string): Promise<string> {
+  const ONE_HOUR = 60 * 60 * 1000;
+  if (!pistonRuntimesCache || Date.now() - pistonRuntimesFetchedAt > ONE_HOUR) {
+    const { data } = await axios.get(`${PISTON_API_URL}/runtimes`, { timeout: 10000 });
+    pistonRuntimesCache = data;
+    pistonRuntimesFetchedAt = Date.now();
+  }
+  const match = pistonRuntimesCache!.find(
+    (r) => r.language === language || r.aliases?.includes(language)
+  );
+  if (!match) throw new Error(`No Piston runtime available for "${language}"`);
+  return match.version;
+}
+
+interface PistonResult {
+  success: boolean;
+  output: string;
+  error: string;
+  via: string;
+}
+
+async function executeSandboxed(code: string, language: string, filename?: string): Promise<PistonResult> {
+  const pistonLanguageMap: Record<string, { lang: string; defaultFile: string }> = {
+    python: { lang: "python", defaultFile: "main.py" },
+    javascript: { lang: "javascript", defaultFile: "main.js" },
+  };
+
+  const mapped = pistonLanguageMap[language];
+  if (!mapped) throw new Error(`Language "${language}" is not configured for sandboxed execution`);
+
+  const version = await getPistonVersion(mapped.lang);
+
+  const { data } = await axios.post(
+    `${PISTON_API_URL}/execute`,
+    {
+      language: mapped.lang,
+      version,
+      files: [{ name: filename || mapped.defaultFile, content: code }],
+      stdin: "",
+      compile_timeout: 10000,
+      run_timeout: 10000,
+      run_memory_limit: 256 * 1024 * 1024, // 256MB
+    },
+    { timeout: 20000 }
+  );
+
+  // Piston returns { compile?: {stdout,stderr,code}, run: {stdout,stderr,code,signal} }
+  if (data.compile && data.compile.code !== 0) {
+    return {
+      success: false,
+      output: data.compile.stdout || "",
+      error: data.compile.stderr || "Compilation failed",
+      via: "Piston (sandboxed)",
+    };
+  }
+
+  const run = data.run || {};
+  return {
+    success: run.code === 0,
+    output: run.stdout || "",
+    error: run.stderr || (run.signal ? `Process terminated: ${run.signal}` : ""),
+    via: "Piston (sandboxed)",
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────
 
 const db = new Database("nexus.db");
 
@@ -682,46 +759,33 @@ app.post("/api/execute", async (req, res) => {
   const finalLanguage =
     filename && extToLang[ext] ? extToLang[ext] : language;
 
-  // Step 2: Native execution for Python and JavaScript (fastest, no API needed)
-  const nativeLanguages = ['python', 'javascript'];
-  if (nativeLanguages.includes(finalLanguage)) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-'));
+  // Step 2: Sandboxed execution for Python and JavaScript via Piston.
+  // IMPORTANT: this used to shell out to `python3`/`node` directly on this
+  // server (child_process.exec). That gave any user who could reach this
+  // endpoint arbitrary code execution on the box hosting your DB, session
+  // secret, and OAuth credentials. It now runs in an isolated container
+  // with no access to this server, via the same network-API pattern
+  // already used for JDoodle below.
+  const sandboxedLanguages = ['python', 'javascript'];
+  if (sandboxedLanguages.includes(finalLanguage)) {
     try {
-      let filename2 = '';
-      let runCommand = '';
-
-      if (finalLanguage === 'python') {
-        filename2 = path.join(tmpDir, 'main.py');
-        fs.writeFileSync(filename2, code);
-        runCommand = `timeout 10 python3 "${filename2}"`;
-      } else {
-        filename2 = path.join(tmpDir, 'main.js');
-        fs.writeFileSync(filename2, code);
-        runCommand = `timeout 10 node "${filename2}"`;
-      }
-
-      const { stdout, stderr } = await execAsync(runCommand, {
-        timeout: 15000,
-        maxBuffer: 1024 * 1024,
-      });
-
+      const result = await executeSandboxed(code, finalLanguage, filename);
       return res.json({
-        success: true,
-        output: stdout || '',
-        error: stderr || '',
+        success: result.success,
+        output: result.output,
+        error: result.error,
         language: finalLanguage,
-        via: 'Native'
+        via: result.via,
       });
     } catch (err: any) {
+      console.error('[Execute] Piston error:', err.response?.data || err.message);
       return res.json({
         success: false,
         output: '',
-        error: err.stderr || err.message || 'Execution failed',
+        error: err.response?.data?.message || err.message || 'Sandboxed execution failed. The execution service may be temporarily unavailable — try again shortly.',
         language: finalLanguage,
-        via: 'Native'
+        via: 'Piston (sandboxed)',
       });
-    } finally {
-      try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
     }
   }
 
