@@ -20,8 +20,39 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ─── Required Secrets ──────────────────────────────────────────────────────
+// ENCRYPTION_KEY and SESSION_SECRET used to fall back to hardcoded strings
+// (e.g. 'nexus_forge_super_secret_2007') if the env var wasn't set. That
+// meant: forget to configure them on your host, and the app booted anyway
+// using a secret that's sitting in plaintext in this public repo — anyone
+// could decrypt every stored API key in `user_keys` or forge a session
+// cookie. Failing loudly at boot is much safer than failing silently in
+// production.
+function requireEnvVars(names: string[]): Record<string, string> {
+  const missing: string[] = [];
+  const values: Record<string, string> = {};
+  for (const name of names) {
+    const value = process.env[name];
+    if (!value || value.trim().length === 0) {
+      missing.push(name);
+    } else {
+      values[name] = value;
+    }
+  }
+  if (missing.length > 0) {
+    console.error(`\n[FATAL] Missing required environment variable(s): ${missing.join(", ")}`);
+    console.error(`  Local dev:   add them to your .env file (see .env.example)`);
+    console.error(`  Production:  set them in your hosting provider's environment variable settings`);
+    console.error(`  Generate strong values with:  npm run generate-secrets\n`);
+    process.exit(1);
+  }
+  return values;
+}
+
+const REQUIRED_SECRETS = requireEnvVars(["ENCRYPTION_KEY", "SESSION_SECRET"]);
+
 // Encryption Utility for sensitive data
-const ENCRYPTION_KEY = (process.env.ENCRYPTION_KEY || 'nexus_forge_encryption_key_32_chars_long_!!!').padEnd(32).slice(0, 32);
+const ENCRYPTION_KEY = REQUIRED_SECRETS.ENCRYPTION_KEY.padEnd(32).slice(0, 32);
 const IV_LENGTH = 16;
 
 function encrypt(text: string) {
@@ -339,7 +370,7 @@ app.use((req, res, next) => {
 });
 
   app.use(session({
-    secret: process.env.SESSION_SECRET || 'nexus_forge_super_secret_2007',
+    secret: REQUIRED_SECRETS.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
