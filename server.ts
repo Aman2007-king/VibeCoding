@@ -276,9 +276,28 @@ function getUserDb(requesterKey: string): Database.Database {
 async function startServer() {
   const app = express();
   const httpServer = createServer(app);
+
+  // ─── Socket.IO CORS ───────────────────────────────────────────────────
+  // This used to be `cors: { origin: "*" }` — any website on the internet
+  // could open a live socket connection to this server. The frontend never
+  // actually needs that: it always connects with `io()` (no URL), which
+  // means same-origin (this server serves both the API and the built
+  // frontend). Following Socket.IO's own documented pattern: a request
+  // with no Origin header is a same-origin/non-browser request and is
+  // always fine; anything else must be on an explicit allow-list.
+  const explicitAllowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const io = new Server(httpServer, {
     cors: {
-      origin: "*",
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true); // same-origin / non-browser client
+        if (explicitAllowedOrigins.includes(origin)) return callback(null, true);
+        if (process.env.NODE_ENV !== "production") return callback(null, true); // permissive in local dev
+        callback(new Error(`Origin not allowed: ${origin}`));
+      },
       methods: ["GET", "POST"]
     }
   });
@@ -612,83 +631,104 @@ app.use((req, res, next) => {
   });
 
   // Real-time Collaboration State
-  const projectState: { files: Record<string, any>; cursors: Record<string, any> } = {
-    files: {},
-    cursors: {}
-  };
-io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
-  socket.emit("init", projectState);
+  // ─── Per-room collaboration state ──────────────────────────────────────
+  // This used to be ONE global object shared by every connected socket,
+  // regardless of which (if any) room they'd joined. Two real problems
+  // that caused: (1) file:update / cursor:move fell back to
+  // `socket.broadcast.emit(...)` — a true global broadcast to every other
+  // connected stranger on the server — whenever a socket hadn't joined a
+  // room, which is the default state for any solo (non-multiplayer) user.
+  // (2) whiteboard:update / whiteboard:clear broadcast globally
+  // unconditionally, room or not. State is now scoped per room, and
+  // nothing is ever broadcast outside the sender's own room.
+  const roomStates = new Map<string, { files: Record<string, any>; cursors: Record<string, any> }>();
 
-  // ✅ Join a specific room
-  socket.on("join:room", ({ roomId, name, color }) => {
-    socket.join(roomId);
-    (socket as any).roomId = roomId;
-    (socket as any).userName = name;
-    (socket as any).userColor = color;
+  function getRoomState(roomId: string) {
+    let state = roomStates.get(roomId);
+    if (!state) {
+      state = { files: {}, cursors: {} };
+      roomStates.set(roomId, state);
+    }
+    return state;
+  }
 
-    // Notify others in room
-    socket.to(roomId).emit("user:join", {
-      userId: socket.id,
-      name,
-      color,
+  io.on("connection", (socket) => {
+    console.log("User connected:", socket.id);
+    // No global "init" snapshot on connect anymore — a socket has no
+    // meaningful shared state until it actually joins a room (see below).
+
+    socket.on("join:room", ({ roomId, name, color }) => {
+      if (typeof roomId !== "string" || !roomId.trim() || roomId.length > 128) {
+        return; // ignore malformed/empty join attempts
+      }
+      socket.join(roomId);
+      (socket as any).roomId = roomId;
+      (socket as any).userName = typeof name === "string" ? name.slice(0, 64) : "Anonymous";
+      (socket as any).userColor = typeof color === "string" ? color.slice(0, 32) : "#888888";
+
+      // Send the new joiner the current state of *this room only*.
+      socket.emit("init", getRoomState(roomId));
+
+      socket.to(roomId).emit("user:join", {
+        userId: socket.id,
+        name: (socket as any).userName,
+        color: (socket as any).userColor,
+      });
+
+      console.log(`[Room] ${(socket as any).userName} joined room ${roomId}`);
     });
 
-    console.log(`[Room] ${name} joined room ${roomId}`);
-  });
-
-  // ✅ File updates — broadcast to room
-  socket.on("file:update", ({ fileId, code }) => {
-    const roomId = (socket as any).roomId;
-    projectState.files[fileId] = code;
-    if (roomId) {
+    // File updates — only ever sent within the sender's own room. A
+    // socket that hasn't joined a room has nothing to broadcast to.
+    socket.on("file:update", ({ fileId, code }) => {
+      const roomId = (socket as any).roomId;
+      if (!roomId) return;
+      getRoomState(roomId).files[fileId] = code;
       socket.to(roomId).emit("file:update", {
         fileId, code, userId: socket.id
       });
-    } else {
-      socket.broadcast.emit("file:update", {
-        fileId, code, userId: socket.id
+    });
+
+    // Cursor movement — same room-only rule.
+    socket.on("cursor:move", ({ fileId, position }) => {
+      const roomId = (socket as any).roomId;
+      if (!roomId) return;
+      getRoomState(roomId).cursors[socket.id] = { fileId, position };
+      socket.to(roomId).emit("cursor:move", {
+        userId: socket.id,
+        fileId,
+        position,
+        color: (socket as any).userColor,
+        name: (socket as any).userName,
       });
-    }
-  });
+    });
 
-  // ✅ Cursor movement — broadcast to room
-  socket.on("cursor:move", ({ fileId, position }) => {
-    const roomId = (socket as any).roomId;
-    projectState.cursors[socket.id] = { fileId, position };
-    const payload = {
-      userId: socket.id,
-      fileId,
-      position,
-      color: (socket as any).userColor,
-      name: (socket as any).userName,
-    };
-    if (roomId) {
-      socket.to(roomId).emit("cursor:move", payload);
-    } else {
-      socket.broadcast.emit("cursor:move", payload);
-    }
-  });
+    socket.on("whiteboard:update", (data) => {
+      const roomId = (socket as any).roomId;
+      if (!roomId) return;
+      socket.to(roomId).emit("whiteboard:update", data);
+    });
 
-  socket.on("whiteboard:update", (data) => {
-    socket.broadcast.emit("whiteboard:update", data);
-  });
+    socket.on("whiteboard:clear", () => {
+      const roomId = (socket as any).roomId;
+      if (!roomId) return;
+      socket.to(roomId).emit("whiteboard:clear");
+    });
 
-  socket.on("whiteboard:clear", () => {
-    socket.broadcast.emit("whiteboard:clear");
+    socket.on("disconnect", () => {
+      const roomId = (socket as any).roomId;
+      if (roomId) {
+        const state = roomStates.get(roomId);
+        if (state) delete state.cursors[socket.id];
+        socket.to(roomId).emit("user:leave", socket.id);
+        // Clean up state for rooms that are now empty, so this map
+        // doesn't grow unbounded over the life of the server.
+        const remaining = io.sockets.adapter.rooms.get(roomId);
+        if (!remaining || remaining.size === 0) roomStates.delete(roomId);
+      }
+      console.log("User disconnected:", socket.id);
+    });
   });
-
-  socket.on("disconnect", () => {
-    const roomId = (socket as any).roomId;
-    delete projectState.cursors[socket.id];
-    if (roomId) {
-      socket.to(roomId).emit("user:leave", socket.id);
-    } else {
-      io.emit("user:leave", socket.id);
-    }
-    console.log("User disconnected:", socket.id);
-  });
-});
  
   // Vercel Clone API
   const vercelProjectSchema = z.object({
