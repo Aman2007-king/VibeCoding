@@ -1,13 +1,17 @@
 import { GoogleGenAI, Type, ThinkingLevel, GenerateContentResponse } from "@google/genai";
 
-// ✅ Lazy init — never crash on startup if API key is missing
-let _ai: GoogleGenAI | null = null;
-const getDefaultAI = (): GoogleGenAI | null => {
-  const key = (import.meta.env?.VITE_GEMINI_API_KEY as string) || "";
-  if (!key) return null;
-  if (!_ai) _ai = new GoogleGenAI({ apiKey: key });
-  return _ai;
-};
+// NOTE: there used to be a "default" API key here, read from
+// `import.meta.env.VITE_GEMINI_API_KEY`. Any Vite env var prefixed VITE_ is
+// inlined into the client JS bundle at build time — visible to anyone who
+// opens DevTools → Sources. If a default/demo key were ever set, every
+// visitor could scrape it from the bundle and use it for free, generating
+// the project owner a bill. There is no way to ship a "free default key"
+// to the browser safely, so this now always requires the caller's own key
+// (already collected via the app's API Key settings UI and passed through
+// as `userKey` on every function below). If you want a true "try without
+// signing up" experience later, that requires a *server-side* proxy
+// endpoint that holds the default key in Express only and is never sent
+// to the browser — a bigger change, not done here.
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -25,14 +29,14 @@ const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 1000): Pr
 };
 
 const getAIClient = (userKey?: string): GoogleGenAI => {
-  if (userKey) return new GoogleGenAI({ apiKey: userKey });
-  const defaultAI = getDefaultAI();
-  if (!defaultAI) {
-    // Return a dummy client — functions will fail gracefully
-    // User needs to provide API key via the UI
-    return new GoogleGenAI({ apiKey: "placeholder" });
+  if (!userKey) {
+    // Thrown synchronously, before any network call — callers already
+    // wrap these functions in try/catch, so this surfaces immediately
+    // instead of waiting on a round-trip to get a vague auth error back
+    // from Google.
+    throw new Error("No Gemini API key configured. Add your API key in Settings to use AI features.");
   }
-  return defaultAI;
+  return new GoogleGenAI({ apiKey: userKey });
 };
 
 export const generateProject = async (prompt: string, currentFiles: { name: string, code: string }[] = [], useThinking: boolean = false, userKey?: string, model: string = "gemini-3-flash-preview") => {
