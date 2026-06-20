@@ -172,6 +172,76 @@ db.exec(`
   );
 `);
 
+// ─── Sandboxed Per-Requester Databases (Database tab / SQL playground) ─────
+// `/api/db/query` lets a user run arbitrary SQL from the browser. It used to
+// run directly against `nexus.db` — the same file holding `users`,
+// `user_keys` (encrypted API keys), `vercel_projects`, etc. — with no auth
+// check, so any visitor could run `SELECT * FROM user_keys` or
+// `DROP TABLE users`. Real fix: every requester gets their own, completely
+// separate SQLite file that starts empty. Whatever SQL they run, it can only
+// ever affect their own throwaway sandbox — there is no `users` table in it
+// to drop, no other user's data to read. This is sandboxing by physical
+// isolation rather than by trying to blacklist dangerous SQL keywords
+// (which is always bypassable).
+const PROJECT_DB_DIR = path.join(__dirname, "project-data");
+if (!fs.existsSync(PROJECT_DB_DIR)) fs.mkdirSync(PROJECT_DB_DIR, { recursive: true });
+
+function sanitizeDbKey(key: string): string {
+  // Defense in depth: requesterKey is always server-generated (see
+  // getRequesterKey below), never taken verbatim from client input, but we
+  // strip anything that isn't a safe filename character anyway so this can
+  // never be used for path traversal even if that ever changes.
+  return key.replace(/[^a-zA-Z0-9_:-]/g, "_").slice(0, 128);
+}
+
+// Identifies the caller for sandboxing purposes. Logged-in users are scoped
+// by their real account id. Guests get a random id generated once and
+// stored in their (httpOnly, server-side) session — NOT trusted from any
+// client-supplied value — so two anonymous visitors never share a sandbox
+// (this also fixes the separate "all guests share one 'guest' bucket" bug
+// in the Vercel-clone routes' spirit, for this subsystem).
+function getRequesterKey(req: express.Request): string {
+  const session = req.session as any;
+  if (session?.user?.id) return sanitizeDbKey(`user_${session.user.id}`);
+  if (!session.anonId) {
+    session.anonId = crypto.randomBytes(16).toString("hex");
+  }
+  return sanitizeDbKey(`anon_${session.anonId}`);
+}
+
+const userDbCache = new Map<string, Database.Database>();
+const MAX_CACHED_USER_DBS = 200; // bound memory / open file handles
+
+function getUserDb(requesterKey: string): Database.Database {
+  let conn = userDbCache.get(requesterKey);
+  if (conn) return conn;
+
+  if (userDbCache.size >= MAX_CACHED_USER_DBS) {
+    const oldestKey = userDbCache.keys().next().value;
+    if (oldestKey) {
+      userDbCache.get(oldestKey)?.close();
+      userDbCache.delete(oldestKey);
+    }
+  }
+
+  const dbPath = path.join(PROJECT_DB_DIR, `${requesterKey}.db`);
+  conn = new Database(dbPath);
+  conn.pragma("journal_mode = WAL");
+  // Pre-create the table the structured /api/user-db endpoints rely on.
+  conn.exec(`
+    CREATE TABLE IF NOT EXISTS user_project_data (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      collection_name TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  userDbCache.set(requesterKey, conn);
+  return conn;
+}
+// ─────────────────────────────────────────────────────────────────────────
+
 async function startServer() {
   const app = express();
   const httpServer = createServer(app);
@@ -247,8 +317,16 @@ async function startServer() {
 
   // Input Sanitization Middleware (Basic XSS Protection) - MUST be after express.json()
 app.use((req, res, next) => {
-  // Skip sanitization for code execution — escaping breaks code syntax
-  if (req.path === '/api/execute') return next();
+  // Skip sanitization for code execution — escaping breaks code syntax.
+  // Skip for /api/db/query — escaping breaks SQL containing quotes (e.g. WHERE name = 'John').
+  // Skip for /api/user-db/* — these store arbitrary JSON document values verbatim.
+  if (
+    req.path === '/api/execute' ||
+    req.path === '/api/db/query' ||
+    req.path.startsWith('/api/user-db/')
+  ) {
+    return next();
+  }
   
   if (req.body && typeof req.body === 'object') {
     for (const key in req.body) {
@@ -665,12 +743,21 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Database API
+  // Database API — runs against the caller's own isolated sandbox DB only
+  // (see "Sandboxed Per-Requester Databases" above). Never touches nexus.db.
   app.post("/api/db/query", (req, res) => {
     const { query, params } = req.body;
+    if (typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ success: false, error: "A 'query' string is required" });
+    }
+    if (query.length > 20000) {
+      return res.status(400).json({ success: false, error: "Query is too long" });
+    }
     try {
-      const stmt = db.prepare(query);
-      const results = query.trim().toLowerCase().startsWith("select") || query.trim().toLowerCase().startsWith("pragma")
+      const requesterDb = getUserDb(getRequesterKey(req));
+      const stmt = requesterDb.prepare(query);
+      const normalized = query.trim().toLowerCase();
+      const results = normalized.startsWith("select") || normalized.startsWith("pragma")
         ? stmt.all(params || [])
         : stmt.run(params || []);
       res.json({ success: true, results });
@@ -681,19 +768,27 @@ io.on("connection", (socket) => {
 
   app.get("/api/db/tables", (req, res) => {
     try {
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+      const requesterDb = getUserDb(getRequesterKey(req));
+      const tables = requesterDb.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
       res.json({ success: true, tables });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
     }
   });
 
-  // User Project Database API (Generic CRUD for user-written code)
+  // User Project Database API (Generic CRUD for user-written code) — also
+  // scoped to the caller's own sandbox DB, so projectId/collection are just
+  // namespacing *within* a requester's own isolated data, not a security
+  // boundary on their own (the old version trusted projectId from the URL
+  // alone, so any visitor could read/write/delete any other user's data —
+  // and in practice the frontend hardcodes projectId to "my-project" for
+  // every single user, so it was effectively one shared bucket for everyone).
   app.post("/api/user-db/:projectId/:collection", (req, res) => {
     const { projectId, collection } = req.params;
     const data = JSON.stringify(req.body);
     try {
-      const stmt = db.prepare("INSERT INTO user_project_data (project_id, collection_name, data) VALUES (?, ?, ?)");
+      const requesterDb = getUserDb(getRequesterKey(req));
+      const stmt = requesterDb.prepare("INSERT INTO user_project_data (project_id, collection_name, data) VALUES (?, ?, ?)");
       const result = stmt.run(projectId, collection, data);
       res.json({ success: true, id: result.lastInsertRowid });
     } catch (err: any) {
@@ -704,7 +799,8 @@ io.on("connection", (socket) => {
   app.get("/api/user-db/:projectId/:collection", (req, res) => {
     const { projectId, collection } = req.params;
     try {
-      const rows = db.prepare("SELECT id, data, created_at FROM user_project_data WHERE project_id = ? AND collection_name = ?").all(projectId, collection);
+      const requesterDb = getUserDb(getRequesterKey(req));
+      const rows = requesterDb.prepare("SELECT id, data, created_at FROM user_project_data WHERE project_id = ? AND collection_name = ?").all(projectId, collection);
       const results = rows.map((r: any) => ({
         id: r.id,
         ...JSON.parse(r.data),
@@ -719,7 +815,8 @@ io.on("connection", (socket) => {
   app.delete("/api/user-db/:projectId/:collection/:id", (req, res) => {
     const { projectId, collection, id } = req.params;
     try {
-      db.prepare("DELETE FROM user_project_data WHERE project_id = ? AND collection_name = ? AND id = ?").run(projectId, collection, id);
+      const requesterDb = getUserDb(getRequesterKey(req));
+      requesterDb.prepare("DELETE FROM user_project_data WHERE project_id = ? AND collection_name = ? AND id = ?").run(projectId, collection, id);
       res.json({ success: true });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
