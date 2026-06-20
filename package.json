@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+  "generate-secrets": "node scripts/generate-secrets.mjs",
     "build": "npm install && vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
