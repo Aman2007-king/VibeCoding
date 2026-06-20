@@ -4,3 +4,33 @@ services:
     env: node
     buildCommand: chmod +x build.sh && bash build.sh
     startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Generated once by Render and kept stable across deploys — never
+      # regenerated automatically, so previously-encrypted data stays
+      # decryptable. See server.ts requireEnvVars().
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      # Required for GitHub sign-in / repo push. Create at:
+      # https://github.com/settings/developers
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_REDIRECT_URI
+        sync: false
+      # Required for Google sign-in. Create at:
+      # https://console.cloud.google.com/apis/credentials
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # Required for non-Python/JS code execution. Get credentials at:
+      # https://www.jdoodle.com/compiler-api
+      - key: JDOODLE_CLIENT_ID
+        sync: false
+      - key: JDOODLE_CLIENT_SECRET
+        sync: false
