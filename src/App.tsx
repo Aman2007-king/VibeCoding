@@ -5130,7 +5130,12 @@ const handleExecuteCode = async () => {
 </button>
                    <button
               onClick={() => {
-                const id = roomId || Math.random().toString(36).substring(2, 8);
+                // crypto.randomUUID() instead of Math.random().toString(36) —
+                // the old room codes were only ~31 bits of entropy (6
+                // base-36 characters), brute-forceable by a script in a
+                // reasonable time against a live server. A UUID is
+                // effectively unguessable.
+                const id = roomId || crypto.randomUUID();
                 setRoomId(id);
                 const url = `${window.location.origin}?room=${id}`;
                 navigator.clipboard.writeText(url);
