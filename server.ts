@@ -301,6 +301,19 @@ async function startServer() {
       methods: ["GET", "POST"]
     }
   });
+
+  // Used by the OAuth flows below to validate the `origin` query parameter
+  // a client sends us, reusing the same allow-list as Socket.IO's CORS
+  // config above. Without this, a crafted link could set origin to an
+  // attacker-controlled domain, and the AUTH_SUCCESS message sent back
+  // after login — which includes the user's GitHub/Google access token —
+  // would be targeted at that domain instead of the real app.
+  function isOriginAllowed(origin: string, req: express.Request): boolean {
+    if (explicitAllowedOrigins.includes(origin)) return true;
+    const requestOrigin = `${req.protocol}://${req.get("host")}`;
+    return origin === requestOrigin;
+  }
+
   const PORT = process.env.PORT || 3000;
 
   // Trust proxy for secure cookies behind reverse proxy
@@ -423,6 +436,9 @@ app.use((req, res, next) => {
 
     const origin = (req.query.origin as string)?.replace(/\/$/, "");
     if (!origin) return res.status(400).json({ error: "Origin is required" });
+    if (!isOriginAllowed(origin, req)) {
+      return res.status(400).json({ error: "Origin not allowed" });
+    }
 
     const redirectUri = process.env.GITHUB_REDIRECT_URI;
     if (!redirectUri) {
@@ -444,6 +460,14 @@ app.use((req, res, next) => {
 
     if (!code) return res.status(400).send("Code is required");
     if (!origin) return res.status(400).send("Invalid state parameter");
+    // `state` is opaque to GitHub — it just echoes back whatever was sent
+    // to the authorize URL. An attacker could skip /api/auth/github/url
+    // entirely and construct their own GitHub authorize link with a
+    // crafted `state` value, bypassing the validation there. So origin
+    // must be re-validated here too, not just at the point of generation.
+    if (!isOriginAllowed(origin, req)) {
+      return res.status(400).send("Origin not allowed");
+    }
 
     try {
       const tokenResponse = await axios.post(
@@ -499,7 +523,7 @@ app.use((req, res, next) => {
         <html><body><script>
           window.opener.postMessage(
             { type: 'AUTH_SUCCESS', user: ${JSON.stringify(user)} },
-            '${origin}'
+            ${JSON.stringify(origin)}
           );
           window.close();
         </script></body></html>
@@ -510,7 +534,7 @@ app.use((req, res, next) => {
         <html><body><script>
           window.opener.postMessage(
             { type: 'AUTH_ERROR', error: 'Authentication failed' },
-            '${origin}'
+            ${JSON.stringify(origin)}
           );
           window.close();
         </script></body></html>
@@ -527,6 +551,9 @@ app.use((req, res, next) => {
     if (!origin) return res.status(400).json({ error: "Origin is required" });
 
     origin = origin.replace(/\/$/, "");
+    if (!isOriginAllowed(origin, req)) {
+      return res.status(400).json({ error: "Origin not allowed" });
+    }
 
     (req.session as any).authOrigin = origin;
     const redirectUri = `${origin}/api/auth/google/callback`;
@@ -580,7 +607,7 @@ app.use((req, res, next) => {
         <html>
           <body>
             <script>
-              window.opener.postMessage({ type: 'AUTH_SUCCESS', user: ${JSON.stringify(user)} }, '*');
+              window.opener.postMessage({ type: 'AUTH_SUCCESS', user: ${JSON.stringify(user)} }, ${JSON.stringify(origin)});
               window.close();
             </script>
           </body>
