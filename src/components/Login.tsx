@@ -25,6 +25,11 @@ export default function Login() {
       const { url } = await response.json();
       const popup = window.open(url, 'github_oauth', 'width=600,height=700');
       const handler = (event: MessageEvent) => {
+        // The popup is served by our own backend, so a legitimate
+        // AUTH_SUCCESS message always comes from our own origin. Without
+        // this check, any other open tab/site could post a fake
+        // AUTH_SUCCESS and make this UI think login succeeded.
+        if (event.origin !== window.location.origin) return;
         if (event.data?.type === 'AUTH_SUCCESS') {
           window.removeEventListener('message', handler);
           popup?.close();
