@@ -764,7 +764,7 @@ app.use((req, res, next) => {
   });
 
   app.get("/api/vercel/projects", (req, res) => {
-    const userId = (req.session && (req.session as any).user) ? (req.session as any).user.id : 'guest';
+    const userId = getRequesterKey(req); // was: shared literal 'guest' for every anonymous visitor
     try {
       const projects = db.prepare("SELECT * FROM vercel_projects WHERE user_id = ?").all(userId);
       res.json({ success: true, projects });
@@ -774,7 +774,7 @@ app.use((req, res, next) => {
   });
 
   app.post("/api/vercel/projects", (req, res) => {
-    const userId = (req.session && (req.session as any).user) ? (req.session as any).user.id : 'guest';
+    const userId = getRequesterKey(req); // was: shared literal 'guest' for every anonymous visitor
 
     const validation = vercelProjectSchema.safeParse(req.body);
     if (!validation.success) return res.status(400).json({ error: "Invalid input", details: validation.error.format() });
