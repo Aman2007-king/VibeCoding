@@ -792,7 +792,16 @@ app.use((req, res, next) => {
 
   app.get("/api/vercel/projects/:id/deployments", (req, res) => {
     const { id } = req.params;
+    const userId = getRequesterKey(req);
     try {
+      // Previously this returned deployment logs for ANY project id with
+      // no check that the caller owns it — anyone could read another
+      // user's build logs by guessing/incrementing ids. 404 (rather than
+      // 403) for both "doesn't exist" and "not yours", so this endpoint
+      // doesn't confirm which project ids are real to someone probing it.
+      const project = db.prepare("SELECT id FROM vercel_projects WHERE id = ? AND user_id = ?").get(id, userId);
+      if (!project) return res.status(404).json({ success: false, error: "Project not found" });
+
       const deployments = db.prepare("SELECT * FROM vercel_deployments WHERE project_id = ? ORDER BY created_at DESC").all(id);
       res.json({ success: true, deployments });
     } catch (err: any) {
@@ -802,7 +811,27 @@ app.use((req, res, next) => {
 
   app.post("/api/vercel/deployments", async (req, res) => {
     const { project_id } = req.body;
-    const deployment_id = `dep-${Math.random().toString(36).substring(2, 9)}`;
+    if (typeof project_id !== 'string' || !project_id) {
+      return res.status(400).json({ success: false, error: "project_id is required" });
+    }
+    const userId = getRequesterKey(req);
+
+    try {
+      // Same check on the write side — without this, anyone could trigger a
+      // (fake) deployment against any other user's project_id.
+      const project = db.prepare("SELECT id FROM vercel_projects WHERE id = ? AND user_id = ?").get(project_id, userId);
+      if (!project) return res.status(404).json({ success: false, error: "Project not found" });
+    } catch (err: any) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+
+    // crypto-random instead of Math.random().toString(36) — this id is
+    // also the Socket.IO event name used to stream logs (vercel:logs:<id>),
+    // which is broadcast server-wide rather than to a specific client, so
+    // it doubles as the only thing standing between a guesser and another
+    // user's live build output. Math.random() here was as weak as the
+    // room-id issue fixed earlier (1.6).
+    const deployment_id = `dep-${crypto.randomBytes(12).toString('hex')}`;
 
     try {
       db.prepare("INSERT INTO vercel_deployments (id, project_id, status, logs) VALUES (?, ?, ?, ?)").run(deployment_id, project_id, 'BUILDING', '');
