@@ -28,7 +28,8 @@ import {
   History,
   ChevronRight,
   GitBranch,
-  Settings
+  Settings,
+  Info
 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -365,6 +366,12 @@ function getContentType(fileName: string) {
               <Cloud className="w-6 h-6 text-accent" />
               <span className="text-lg font-black tracking-tighter uppercase">Nexus Cloud</span>
             </div>
+            <span 
+              className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-400/10 text-amber-400 border border-amber-400/20"
+              title="Builds and deploys here are simulated for demonstration — nothing is actually cloned, built, or hosted."
+            >
+              Demo Mode
+            </span>
             <nav className="hidden md:flex items-center gap-1">
               <button 
                 onClick={() => setActiveTab('dashboard')}
@@ -457,7 +464,7 @@ function getContentType(fileName: string) {
                           <div className="bg-bg-secondary px-6 py-3 border-b border-white/5 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <Terminal className="w-4 h-4 text-accent" />
-                              <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Build Logs - {activeDeployment.id}</span>
+                              <span className="text-[10px] font-mono uppercase tracking-widest opacity-50">Simulated Build Logs - {activeDeployment.id}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               {activeDeployment.status === 'BUILDING' && <Loader2 className="w-3 h-3 text-accent animate-spin" />}
@@ -811,6 +818,11 @@ function getContentType(fileName: string) {
                     />
                   </div>
                 </div>
+              </div>
+
+              <div className="flex items-center gap-2 px-1 pt-2 text-amber-400/80">
+                <Info className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="text-[10px] font-medium leading-tight">Demo Mode: this simulates a deploy pipeline for demonstration. Your repo isn't actually cloned, built, or hosted anywhere.</span>
               </div>
 
               <div className="flex gap-4 pt-6 relative z-10">
