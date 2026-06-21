@@ -80,30 +80,17 @@ export default function VercelClone({ onBack, currentUser }: VercelCloneProps) {
   const [logs, setLogs] = useState<string[]>([]);
   const [userRepos, setUserRepos] = useState<GitHubRepo[]>([]);
   const [repoLoading, setRepoLoading] = useState(false);
-  const [deploymentDomain, setDeploymentDomain] = useState('nexuscloud.sh');
   const socketRef = useRef<Socket | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchProjects();
-    fetchConfig();
     socketRef.current = io();
 
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
-
-  const fetchConfig = async () => {
-    try {
-      const res = await axios.get('/api/vercel/config');
-      if (res.data.success) {
-        setDeploymentDomain(res.data.domain);
-      }
-    } catch (err) {
-      console.error('Failed to fetch config:', err);
-    }
-  };
 
   useEffect(() => {
     if (logEndRef.current) {
@@ -429,10 +416,14 @@ function getContentType(fileName: string) {
                           <Github className="w-4 h-4" />
                           {selectedProject.repo_url.replace('https://github.com/', '')}
                         </a>
-                        <a href={`https://${selectedProject.subdomain}.${deploymentDomain}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                        <span 
+                          className="flex items-center gap-1.5 opacity-50 cursor-not-allowed"
+                          title="Demo Mode: this is a simulated URL — nothing is actually hosted here."
+                        >
                           <Globe className="w-4 h-4" />
-                          {selectedProject.subdomain}.{deploymentDomain}
-                        </a>
+                          {selectedProject.subdomain}
+                          <span className="text-[9px] font-black uppercase tracking-widest text-amber-400/80 border border-amber-400/20 rounded px-1 py-0.5 ml-1">Demo</span>
+                        </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -523,14 +514,12 @@ function getContentType(fileName: string) {
                                     Retry
                                   </button>
                                 )}
-                                <a 
-                                  href={`https://${selectedProject.subdomain}.${deploymentDomain}`} 
-                                  target="_blank" 
-                                  rel="noreferrer"
-                                  className="p-2.5 hover:bg-white/5 rounded-xl text-text-secondary hover:text-accent transition-all"
+                                <span 
+                                  className="p-2.5 rounded-xl text-text-secondary opacity-30 cursor-not-allowed"
+                                  title="Demo Mode: this is a simulated deployment — there's no real site to visit."
                                 >
                                   <ExternalLink className="w-4 h-4" />
-                                </a>
+                                </span>
                               </div>
                             </div>
                           ))}
@@ -637,7 +626,7 @@ function getContentType(fileName: string) {
                             <h3 className="text-2xl font-black uppercase tracking-tight group-hover:text-accent transition-colors">{project.name}</h3>
                             <p className="text-xs text-text-secondary font-mono truncate opacity-50 flex items-center gap-1.5">
                               <Globe className="w-3 h-3" />
-                              {project.subdomain}.{deploymentDomain}
+                              {project.subdomain}
                             </p>
                           </div>
                           <div className="pt-6 border-t border-white/5 flex items-center justify-between text-text-secondary relative z-10">
