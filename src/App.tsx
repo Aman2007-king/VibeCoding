@@ -1806,7 +1806,14 @@ const monacoOptions = useMemo(() => ({
     }
 
     const handleMessage = (event: MessageEvent) => {
+      // AUTH_SUCCESS comes from the OAuth popup, which is a normal,
+      // same-origin page served by our own backend — origin checking
+      // works correctly here. This handler applies
+      // event.data.user.accessToken straight to state/localStorage, so an
+      // unvalidated postMessage from any origin could otherwise inject a
+      // forged "logged in" state or a fake token.
       if (event.data?.type === 'AUTH_SUCCESS') {
+        if (event.origin !== window.location.origin) return;
         const { user } = event.data;
         setUser(user);
         if (user.provider === 'github' && user.accessToken) {
@@ -1823,6 +1830,16 @@ const monacoOptions = useMemo(() => ({
         });
       }
       if (event.data?.type === 'PREVIEW_ERROR') {
+        // The preview iframe is sandboxed without allow-same-origin, so it
+        // has a genuinely opaque origin — event.origin would just read as
+        // the literal string "null" for it (and for any other sandboxed
+        // source), making an origin check meaningless here. event.source
+        // is set by the browser itself to the actual window that called
+        // postMessage and can't be spoofed by the message data, so
+        // comparing it to the specific iframe we rendered is the correct
+        // way to confirm this really came from our own preview.
+        const previewIframe = document.querySelector('iframe');
+        if (!previewIframe || event.source !== previewIframe.contentWindow) return;
         console.error('Preview Script Error:', event.data.error);
         setTerminalHistory(prev => [...prev, { 
           cmd: 'preview-runtime', 
@@ -3253,6 +3270,10 @@ const handleUploadFile = useCallback(() => {
         ${instrumentedJs}
       } catch (e) {
         console.error('Runtime Error in combined scripts:', e);
+        // This script runs inside a sandboxed iframe with an opaque
+        // origin (no allow-same-origin), so window.location.origin here
+        // is just "null" — not a usable target. '*' is the only valid
+        // option; the parent validates event.source on receipt instead.
         window.parent.postMessage({ 
           type: 'PREVIEW_ERROR', 
           error: { msg: e.message, stack: e.stack }
@@ -3321,6 +3342,8 @@ ${jsFile.code.replace(/<\/script>/g, '<\\/script>')}</script>`);
               const errorMessage = msg === 'Script error.' 
                 ? 'Script error: The browser restricted details for a cross-origin script error. This often happens with syntax errors in injected scripts.' 
                 : msg;
+              // '*' — this frame's own origin is opaque (sandboxed, no
+              // allow-same-origin), so there's no usable specific target.
               window.parent.postMessage({ 
                 type: 'PREVIEW_ERROR', 
                 error: { msg: errorMessage, url, line, col, stack: error?.stack }
@@ -3356,6 +3379,12 @@ ${jsFile.code.replace(/<\/script>/g, '<\\/script>')}</script>`);
                 const shouldPause = await new Promise(resolve => {
                   const timeout = setTimeout(() => resolve(true), 1000); // Fail-safe
                   const handler = (e) => {
+                    // This frame is sandboxed without allow-same-origin, so
+                    // its own window.location.origin is opaque too — an
+                    // origin check is meaningless from in here. Only the
+                    // browser-set event.source can reliably confirm a
+                    // message really came from this iframe's own parent.
+                    if (e.source !== window.parent) return;
                     if (e.data.type === 'BREAKPOINT_CONDITION_RESULT') {
                       clearTimeout(timeout);
                       window.removeEventListener('message', handler);
@@ -3385,6 +3414,7 @@ ${jsFile.code.replace(/<\/script>/g, '<\\/script>')}</script>`);
                   
                   return new Promise(resolve => {
                     const handler = (e) => {
+                      if (e.source !== window.parent) return;
                       if (e.data.type === 'DEBUGGER_CONTINUE') {
                         window.removeEventListener('message', handler);
                         resolve();
@@ -3570,6 +3600,17 @@ const handleExecuteCode = async () => {
 
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
+      // Every message type this handler processes (GET_BREAKPOINT_CONDITION,
+      // DEBUGGER_SYNC, PREVIEW_ERROR, PREVIEW_LOG) comes from the preview
+      // iframe. That iframe is sandboxed without allow-same-origin, so it
+      // has a genuinely opaque origin — e.origin would just read as the
+      // literal string "null", same as any other sandboxed source, making
+      // an origin check meaningless. event.source is set by the browser to
+      // the actual window that called postMessage and can't be spoofed via
+      // the message data, so comparing it to the specific iframe we
+      // rendered correctly confirms this came from our own preview.
+      const previewIframe = document.querySelector('iframe');
+      if (!previewIframe || e.source !== previewIframe.contentWindow) return;
       if (e.data.type === 'GET_BREAKPOINT_CONDITION') {
         const { fileId, line, depth } = e.data;
         const fileBreakpoints = breakpoints[fileId] || [];
@@ -3591,6 +3632,9 @@ const handleExecuteCode = async () => {
 
         const iframe = document.querySelector('iframe');
         if (iframe && iframe.contentWindow) {
+          // iframe is opaque-origin (sandboxed without allow-same-origin);
+          // '*' is the only valid target, and the iframe-side handler
+          // validates event.source === window.parent before trusting it.
           if (isBreakpoint || shouldPauseStepping) {
             iframe.contentWindow.postMessage({ 
               type: 'BREAKPOINT_CONDITION_RESULT', 
@@ -3672,7 +3716,7 @@ const handleExecuteCode = async () => {
   const handleContinue = () => {
     const iframe = document.querySelector('iframe');
     if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
+      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*'); // iframe is opaque-origin (sandboxed without allow-same-origin); '*' is the only valid target, and the iframe-side handler validates event.source === window.parent before trusting it
       setDebuggerStatus('running');
       setStepping(false);
       setSteppingMode(null);
@@ -3691,7 +3735,7 @@ const handleExecuteCode = async () => {
     setSteppingMode('into');
     const iframe = document.querySelector('iframe');
     if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
+      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*'); // iframe is opaque-origin (sandboxed without allow-same-origin); '*' is the only valid target, and the iframe-side handler validates event.source === window.parent before trusting it
       setDebuggerStatus('running');
       
       if (pausedLine) {
@@ -3709,7 +3753,7 @@ const handleExecuteCode = async () => {
     setTargetDepth(currentDepth);
     const iframe = document.querySelector('iframe');
     if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
+      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*'); // iframe is opaque-origin (sandboxed without allow-same-origin); '*' is the only valid target, and the iframe-side handler validates event.source === window.parent before trusting it
       setDebuggerStatus('running');
       
       if (pausedLine) {
@@ -3727,7 +3771,7 @@ const handleExecuteCode = async () => {
     setTargetDepth(Math.max(0, currentDepth - 1));
     const iframe = document.querySelector('iframe');
     if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*');
+      iframe.contentWindow.postMessage({ type: 'DEBUGGER_CONTINUE' }, '*'); // iframe is opaque-origin (sandboxed without allow-same-origin); '*' is the only valid target, and the iframe-side handler validates event.source === window.parent before trusting it
       setDebuggerStatus('running');
       
       if (pausedLine) {
@@ -4871,7 +4915,19 @@ const handleExecuteCode = async () => {
                 srcDoc={previewContent}
                 title="preview"
                 className="w-full h-full border-none"
-                sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-pointer-lock"
+                // allow-same-origin was removed: combined with allow-scripts,
+                // it let anything running in this iframe (AI-generated code,
+                // or anything a user pastes into the preview) reach straight
+                // into the parent page's DOM, cookies, and session via
+                // direct same-origin access — a well-known sandbox-escape
+                // pattern. Without it, the iframe gets a genuinely opaque
+                // origin and can only talk to the parent via postMessage,
+                // which is validated by checking event.source below rather
+                // than by origin string (an opaque origin reports as the
+                // literal string "null" for every sandboxed frame, so an
+                // origin check alone can't tell this iframe apart from any
+                // other sandboxed source).
+                sandbox="allow-scripts allow-modals allow-popups allow-forms allow-pointer-lock"
               />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-text-secondary bg-bg-secondary">
