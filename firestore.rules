@@ -52,9 +52,20 @@ service cloud.firestore {
     }
 
     function isAdmin() {
+      // This used to also grant admin to a specific hardcoded Gmail
+      // address. That meant: (1) personal info sitting in plaintext in a
+      // public repo, and (2) a permanent, unrevocable admin grant baked
+      // into source rather than into data — there was no way to remove or
+      // rotate that access without editing and redeploying these rules.
+      // Admin status now comes only from the `role` field on the user's
+      // own Firestore document, set by you directly in the Firebase
+      // Console (or via the Admin SDK from a trusted, server-side
+      // context, which always bypasses these client-facing rules
+      // entirely). See the `create`/`update` rules below: a regular user
+      // can never set their own role to 'admin' — only an existing admin
+      // (or you, via the Console/Admin SDK) can grant it to someone else.
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "ry650506@gmail.com" && request.auth.token.email_verified == true));
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     function isValidEmail(email) {
