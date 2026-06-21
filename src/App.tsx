@@ -861,6 +861,7 @@ const saveProjectToFirestore = async () => {
   // AI Review/Tests/Docs State
   const [reviewResult, setReviewResult] = useState<string>('');
   const [testResults, setTestResults] = useState<{ name: string, status: 'pass' | 'fail' | 'pending', error?: string }[]>([]);
+  const [testRunMeta, setTestRunMeta] = useState<{ elapsedSeconds: number; raw: string } | null>(null);
   const [docsContent, setDocsContent] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
          const [collaborators, setCollaborators] = useState<{
@@ -3872,28 +3873,100 @@ const handleExecuteCode = async () => {
   };
 
   const generateTests = async () => {
+    const activeFile = files.find(f => f.id === activeFileId);
+    if (!activeFile) return;
+
+    const detectedLanguage = getLanguageFromFilename(activeFile.name);
+    // Same execution backend as Run (sandboxed Piston for python/javascript,
+    // JDoodle for the rest — see server.ts /api/execute). Tests can only be
+    // genuinely run for languages that backend supports.
+    const executableLanguages = ['python', 'javascript', 'typescript', 'java', 'cpp', 'c', 'go', 'ruby', 'php', 'bash', 'rust', 'swift', 'kotlin', 'csharp', 'r'];
+    if (!executableLanguages.includes(detectedLanguage)) {
+      showToast(`${activeFile.name}: language not supported for test execution.`, 'error');
+      return;
+    }
+
     setIsAnalyzing(true);
+    setActiveTab('tests');
+    setTestResults([{ name: 'Generating tests...', status: 'pending' }]);
+
     try {
-      const activeFile = files.find(f => f.id === activeFileId);
-      if (!activeFile) return;
-      const result = await chatWithAI(`Generate Vitest unit tests for the following code. Return ONLY the test code.\n\n${activeFile.code}`, [], userApiKey, undefined, selectedModel);
-      // In a real app, we'd save this to a file and run it. 
-      // For demo, we'll simulate running it.
-      setTestResults([
-        { name: 'Initial Render Test', status: 'pending' },
-        { name: 'Data Processing Logic', status: 'pending' },
-        { name: 'Edge Case Handling', status: 'pending' }
-      ]);
-      setTimeout(() => {
-        setTestResults([
-          { name: 'Initial Render Test', status: 'pass' },
-          { name: 'Data Processing Logic', status: 'pass' },
-          { name: 'Edge Case Handling', status: 'fail', error: 'Expected 10, got 11' }
-        ]);
-      }, 2000);
-      setActiveTab('tests');
-    } catch (err) {
+      // Ask for plain, dependency-free code rather than a Vitest/Jest/pytest
+      // suite: the sandbox just runs a file and returns stdout — there's no
+      // test framework installed in it to make `describe`/`it`/`expect`
+      // work. Each test prints one line of JSON; that's the only contract
+      // we rely on to tell whether something actually passed or failed.
+      const prompt = `Write standalone, dependency-free ${detectedLanguage} test code for the program below.
+
+Rules:
+- Do NOT use any test framework (no Vitest, Jest, pytest, JUnit, etc.) and do NOT import or require one — it will not be available when this runs.
+- Include the original code directly in your output (or faithfully reimplement the function(s) under test) so the file is complete and runnable entirely on its own, using only the language's standard library.
+- Write 3 to 6 test cases: cover normal behavior plus at least one edge case.
+- Wrap each individual test in error handling so one failing test does not stop the others from running.
+- For EVERY test, print exactly one line of compact JSON and nothing else on that line, in this exact shape:
+  {"__test__":true,"name":"<short test name>","status":"pass"}
+  or on failure:
+  {"__test__":true,"name":"<short test name>","status":"fail","error":"<short reason>"}
+- Do not print any other banners, labels, or logging to stdout — only those JSON lines (plus whatever the code under test itself prints, which is fine).
+- Output ONLY the complete runnable code. No markdown formatting, no code fences, no explanation before or after.
+
+Code to test:
+${activeFile.code}`;
+
+      const testCode = await chatWithAI(prompt, [], userApiKey, undefined, selectedModel);
+      // Strip markdown code fences in case the model adds them despite instructions.
+      const cleanedCode = testCode.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '').trim();
+
+      setTestResults([{ name: 'Running tests in sandbox...', status: 'pending' }]);
+
+      const startedAt = Date.now();
+      const response = await fetch('/api/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: cleanedCode, language: detectedLanguage })
+      });
+      const result = await response.json();
+      const elapsedSeconds = (Date.now() - startedAt) / 1000;
+
+      // Parse only well-formed {"__test__":true,...} lines out of stdout —
+      // anything else on stdout (e.g. a stray console.log inside the code
+      // under test) is silently ignored rather than misread as a result.
+      const parsed: { name: string; status: 'pass' | 'fail'; error?: string }[] = [];
+      for (const line of String(result.output || '').split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const obj = JSON.parse(trimmed);
+          if (obj && obj.__test__ === true && typeof obj.name === 'string') {
+            parsed.push({
+              name: obj.name,
+              status: obj.status === 'pass' ? 'pass' : 'fail',
+              error: typeof obj.error === 'string' ? obj.error : undefined,
+            });
+          }
+        } catch {
+          // not a result line — ignore
+        }
+      }
+
+      if (parsed.length === 0) {
+        // Be explicit when nothing could actually be run, rather than
+        // showing stale or fabricated results — e.g. a syntax error in the
+        // generated code, or a sandbox/network failure.
+        setTestResults([{
+          name: 'Test suite failed to run',
+          status: 'fail',
+          error: result.error || 'The generated test code produced no parseable test results. Try again, or check the raw output below.',
+        }]);
+        setTestRunMeta({ elapsedSeconds, raw: result.output || result.error || '' });
+        return;
+      }
+
+      setTestResults(parsed);
+      setTestRunMeta({ elapsedSeconds, raw: result.output || '' });
+    } catch (err: any) {
       console.error(err);
+      setTestResults([{ name: 'Test suite failed to run', status: 'fail', error: err.message || String(err) }]);
     } finally {
       setIsAnalyzing(false);
     }
@@ -6493,9 +6566,10 @@ const handleExecuteCode = async () => {
                           <div className="opacity-50">
                             {testResults.length > 0 ? (
                               <pre>
-                                {`RUN  v0.34.6 /src\n\n`}
-                                {testResults.map(t => `${t.status === 'pass' ? '✓' : '✗'} ${t.name}`).join('\n')}
-                                {`\n\nTest Files  1 passed (1)\nTests       ${testResults.filter(t => t.status === 'pass').length} passed | ${testResults.filter(t => t.status === 'fail').length} failed\nTime        ${(Math.random() * 2).toFixed(2)}s`}
+                                {`Sandboxed Test Run\n\n`}
+                                {testResults.map(t => `${t.status === 'pass' ? '✓' : t.status === 'fail' ? '✗' : '…'} ${t.name}`).join('\n')}
+                                {testRunMeta ? `\n\nTests       ${testResults.filter(t => t.status === 'pass').length} passed | ${testResults.filter(t => t.status === 'fail').length} failed\nTime        ${testRunMeta.elapsedSeconds.toFixed(2)}s (real sandbox execution)` : ''}
+                                {testRunMeta?.raw ? `\n\nRaw output:\n${testRunMeta.raw}` : ''}
                               </pre>
                             ) : "Waiting for tests..."}
                           </div>
