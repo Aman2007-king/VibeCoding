@@ -796,7 +796,7 @@ const saveProjectToFirestore = async () => {
   const [stagedFiles, setStagedFiles] = useState<Set<number>>(new Set());
   const [commitMessage, setCommitMessage] = useState('');
   const [isGitInitialized, setIsGitInitialized] = useState(false);
-  const [commitHistory, setCommitHistory] = useState<{ id: string, message: string, date: string }[]>([]);
+  const [commitHistory, setCommitHistory] = useState<{ id: string, message: string, date: string, fileCount?: number }[]>([]);
   const [user, setUser] = useState<any>({
     id: 'guest',
     name: 'Guest User',
@@ -2817,83 +2817,197 @@ const handleUploadFile = useCallback(() => {
     }
   };
 
+  // Safe base64 encoding that handles the full Unicode range (emoji,
+  // non-Latin scripts, etc). Plain btoa() only covers Latin-1 — anything
+  // outside that range throws "string contains characters outside of the
+  // Latin1 range", which was the original crash for any file with an emoji
+  // or non-English comment in it.
+  const toBase64 = (str: string): string => {
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary);
+  };
+
+  // Resolves the full repo-relative path for a file, walking up through
+  // parent folders. A file named 'index.js' inside a folder 'src' (parentId
+  // pointing to the src folder) becomes 'src/index.js' in the commit tree.
+  const resolveFilePath = (file: FileState): string => {
+    const parts: string[] = [file.name];
+    let current: FileState | undefined = file;
+    while (current?.parentId != null) {
+      const parent = files.find(f => f.id === current!.parentId);
+      if (!parent) break;
+      parts.unshift(parent.name);
+      current = parent;
+    }
+    return parts.join('/');
+  };
+
+  // Stage all files at once
+  const handleStageAll = () => {
+    setStagedFiles(new Set(files.filter(f => f.type === 'file').map(f => f.id)));
+    showToast('All files staged', 'success');
+  };
+
   const handleGitCommit = () => {
-    if (!commitMessage.trim() || stagedFiles.size === 0) return;
-    
+    if (!commitMessage.trim()) {
+      showToast('Please enter a commit message.', 'error');
+      return;
+    }
+    if (stagedFiles.size === 0) {
+      showToast('No files staged. Click + next to a file to stage it.', 'error');
+      return;
+    }
     const newCommit = {
-      id: Math.random().toString(36).substring(7),
+      id: crypto.randomUUID().slice(0, 7),
       message: commitMessage,
-      date: new Date().toLocaleString()
+      date: new Date().toLocaleString(),
+      fileCount: stagedFiles.size,
     };
-    
     setCommitHistory(prev => [newCommit, ...prev]);
-    setCommitMessage('');
-    setStagedFiles(new Set());
-    showToast(`Committed: ${newCommit.message}`, 'success');
+    showToast(`Committed ${stagedFiles.size} file(s): "${commitMessage}"`, 'success');
   };
 
   const handleGitPush = async () => {
     if (!githubToken) {
-      showToast('Please connect your GitHub account first.', 'error');
+      showToast('Connect your GitHub account first.', 'error');
       return;
     }
-    
     if (!selectedRepo) {
-      showToast('Please select a repository first.', 'error');
+      showToast('Select a repository first.', 'error');
       return;
     }
-    
-    showToast(`Pushing to ${selectedRepo.name}...`, 'info');
-    
+    if (!commitMessage.trim()) {
+      showToast('Enter a commit message before pushing.', 'error');
+      return;
+    }
+
+    const stagedFileList = Array.from(stagedFiles)
+      .map(id => files.find(f => f.id === id))
+      .filter((f): f is FileState => !!f && f.type === 'file');
+
+    if (stagedFileList.length === 0) {
+      showToast('No files staged. Click + next to a file to stage it.', 'error');
+      return;
+    }
+
+    showToast(`Pushing ${stagedFileList.length} file(s) to ${selectedRepo.name}...`, 'info');
+
     try {
       const octokit = new Octokit({ auth: githubToken });
-      
-      // For each staged file, we'll try to update it in the repo
-      // This is a simplified version: we'll just update the first staged file
-      const stagedFileIds = Array.from(stagedFiles);
-      if (stagedFileIds.length === 0) {
-        showToast('No files staged for push.', 'error');
-        return;
-      }
-      
-      const fileToPush = files.find(f => f.id === stagedFileIds[0]);
-      if (!fileToPush) return;
+      const owner = selectedRepo.owner.login;
+      const repo = selectedRepo.name;
+      const branch = selectedRepo.default_branch || 'main';
 
-      // Get the current file content from GitHub to get the SHA
-      let sha: string | undefined;
+      // ── Check if repo is empty (no commits yet) ───────────────────────
+      // getRef throws 409 "Git Repository is empty" on a brand-new repo.
+      // In that case we fall back to createOrUpdateFileContents per-file,
+      // which handles the initial commit itself.
+      let isEmptyRepo = false;
       try {
-        const { data: fileData } = await octokit.rest.repos.getContent({
-          owner: selectedRepo.owner.login,
-          repo: selectedRepo.name,
-          path: fileToPush.name,
-        });
-        if (!Array.isArray(fileData)) {
-          sha = fileData.sha;
+        await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+      } catch (err: any) {
+        const status = err?.status || err?.response?.status;
+        if (status === 409 || status === 404) {
+          isEmptyRepo = true;
+        } else {
+          throw err;
         }
-      } catch (e) {
-        // File might not exist yet, which is fine
       }
 
-      await octokit.rest.repos.createOrUpdateFileContents({
-        owner: selectedRepo.owner.login,
-        repo: selectedRepo.name,
-        path: fileToPush.name,
-        message: commitMessage || `Update ${fileToPush.name}`,
-        content: btoa(fileToPush.code),
-        sha: sha,
-      });
+      if (isEmptyRepo) {
+        // Initial push: createOrUpdateFileContents creates the first commit
+        // and initializes the branch in one shot per file.
+        for (const file of stagedFileList) {
+          const filePath = resolveFilePath(file);
+          await octokit.rest.repos.createOrUpdateFileContents({
+            owner, repo,
+            path: filePath,
+            message: commitMessage,
+            content: toBase64(file.code),
+          });
+        }
+      } else {
+        // ── Step 1: resolve HEAD ───────────────────────────────────────
+        const { data: refData } = await octokit.rest.git.getRef({
+          owner, repo, ref: `heads/${branch}`,
+        });
+        const latestCommitSha = refData.object.sha;
+        const { data: latestCommit } = await octokit.rest.git.getCommit({
+          owner, repo, commit_sha: latestCommitSha,
+        });
+        const baseTreeSha = latestCommit.tree.sha;
 
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-      showToast(`Successfully pushed ${fileToPush.name} to ${selectedRepo.name}!`, 'success');
+        // ── Step 2: create one blob per staged file ────────────────────
+        const blobs = await Promise.all(
+          stagedFileList.map(async file => {
+            const { data: blob } = await octokit.rest.git.createBlob({
+              owner, repo,
+              content: toBase64(file.code),
+              encoding: 'base64',
+            });
+            return { path: resolveFilePath(file), sha: blob.sha };
+          })
+        );
+
+        // ── Step 3: build a new tree on top of the base ───────────────
+        const { data: newTree } = await octokit.rest.git.createTree({
+          owner, repo,
+          base_tree: baseTreeSha,
+          tree: blobs.map(b => ({
+            path: b.path,
+            mode: '100644' as const,
+            type: 'blob' as const,
+            sha: b.sha,
+          })),
+        });
+
+        // ── Step 4: create the commit ──────────────────────────────────
+        const { data: newCommit } = await octokit.rest.git.createCommit({
+          owner, repo,
+          message: commitMessage,
+          tree: newTree.sha,
+          parents: [latestCommitSha],
+        });
+
+        // ── Step 5: advance the branch ref ────────────────────────────
+        await octokit.rest.git.updateRef({
+          owner, repo,
+          ref: `heads/${branch}`,
+          sha: newCommit.sha,
+        });
+
+        // Record real commit SHA in history
+        const shortSha = newCommit.sha.slice(0, 7);
+        setCommitHistory(prev => [{
+          id: shortSha,
+          message: commitMessage,
+          date: new Date().toLocaleString(),
+          fileCount: stagedFileList.length,
+        }, ...prev]);
+      }
+
       setStagedFiles(new Set());
       setCommitMessage('');
+
+      const fileNames = stagedFileList.map(f => resolveFilePath(f)).join(', ');
+      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+      showToast(
+        `✓ Pushed to ${owner}/${repo}/${branch}: ${fileNames}`,
+        'success'
+      );
     } catch (error: any) {
       console.error('Push failed:', error);
-      showToast(`Push failed: ${error.message}`, 'error');
+      const msg = error?.response?.data?.message || error?.message || 'Unknown error';
+      // Give actionable hints for the most common failures
+      if (msg.includes('not have permission') || msg.includes('403')) {
+        showToast(`Push failed: your GitHub token doesn't have repo write access. Re-connect GitHub and grant repo permissions.`, 'error');
+      } else if (msg.includes('422')) {
+        showToast(`Push failed: the branch ref couldn't be updated (possibly a force-push conflict). Pull changes first.`, 'error');
+      } else {
+        showToast(`Push failed: ${msg}`, 'error');
+      }
     }
   };
 
@@ -4788,33 +4902,44 @@ ${activeFile.code}`;
                     <button 
                       onClick={handleGitCommit}
                       disabled={!commitMessage.trim() || stagedFiles.size === 0}
-                      className="w-full py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+                      className="w-full py-2 bg-white/10 text-white rounded-lg text-xs font-bold hover:opacity-90 transition-all disabled:opacity-30 flex items-center justify-center gap-2"
                     >
                       <GitCommit className="w-4 h-4" />
-                      Commit
+                      Commit ({stagedFiles.size})
+                    </button>
+                    <button 
+                      onClick={handleGitPush}
+                      disabled={!commitMessage.trim() || stagedFiles.size === 0}
+                      className="w-full py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold hover:opacity-90 transition-all disabled:opacity-30 flex items-center justify-center gap-2"
+                    >
+                      <GitBranch className="w-4 h-4" />
+                      Commit & Push to GitHub
                     </button>
                   </div>
 
                   {/* Changes Section */}
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">Changes ({files.length})</label>
+                      <label className="text-[10px] font-mono uppercase tracking-widest opacity-40">
+                        Changes ({files.filter(f => f.type === 'file').length}) · {stagedFiles.size} staged
+                      </label>
                       <button 
                         onClick={() => {
-                          if (stagedFiles.size === files.length) setStagedFiles(new Set());
-                          else setStagedFiles(new Set(files.map(f => f.id)));
+                          const fileIds = files.filter(f => f.type === 'file').map(f => f.id);
+                          if (stagedFiles.size === fileIds.length) setStagedFiles(new Set());
+                          else setStagedFiles(new Set(fileIds));
                         }}
                         className="text-[10px] text-accent hover:underline"
                       >
-                        {stagedFiles.size === files.length ? 'Unstage All' : 'Stage All'}
+                        {stagedFiles.size === files.filter(f => f.type === 'file').length ? 'Unstage All' : 'Stage All'}
                       </button>
                     </div>
                     <div className="space-y-1">
-                      {files.map(file => (
+                      {files.filter(f => f.type === 'file').map(file => (
                         <div key={file.id} className="group flex items-center justify-between p-2 rounded hover:bg-white/5 transition-colors">
                           <div className="flex items-center gap-2 overflow-hidden">
                             <FileCode className="w-3.5 h-3.5 opacity-40 shrink-0" />
-                            <span className="text-xs truncate">{file.name}</span>
+                            <span className="text-xs truncate">{resolveFilePath(file)}</span>
                           </div>
                           <button 
                             onClick={() => toggleStageFile(file.id)}
@@ -4843,7 +4968,10 @@ ${activeFile.code}`;
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-medium truncate">{commit.message}</p>
-                              <p className="text-[10px] opacity-40">{commit.date} • {commit.id}</p>
+                              <p className="text-[10px] opacity-40">
+                                {commit.date} • {commit.id}
+                                {commit.fileCount ? ` • ${commit.fileCount} file${commit.fileCount > 1 ? 's' : ''}` : ''}
+                              </p>
                             </div>
                           </div>
                         ))}
