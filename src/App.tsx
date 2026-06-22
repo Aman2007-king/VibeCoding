@@ -3986,20 +3986,247 @@ ${activeFile.code}`;
     }
   };
 
+  // Splits a command line into tokens, respecting "double" and 'single' quotes.
+  const tokenizeCommand = (input: string): string[] => {
+    const tokens: string[] = [];
+    const regex = /"([^"]*)"|'([^']*)'|(\S+)/g;
+    let match;
+    while ((match = regex.exec(input)) !== null) {
+      tokens.push(match[1] ?? match[2] ?? match[3]);
+    }
+    return tokens;
+  };
+
+  // This used to recognize exactly 5 hardcoded strings and fake "npm install".
+  // These commands are real: ls/cat/touch/mkdir/rm/mv/cp/echo/grep/find/wc/head/tail
+  // genuinely read and modify your actual project files (there's no real OS
+  // filesystem to operate on in a browser IDE — your project files ARE the
+  // filesystem here, same model used by browser-based IDEs generally).
+  // python3/node/ruby/etc. genuinely execute via the same sandboxed backend
+  // the Run button uses. No persistent shell session between commands (no
+  // real OS process to hold that state safely) — each command is independent.
+  const runTerminalCommand = async (rawCmd: string) => {
+    const cmd = rawCmd.trim();
+    if (!cmd) return;
+
+    setTerminalHistory(prev => [...prev, { cmd }]);
+    if (cmd === 'clear') { setTerminalHistory([]); return; }
+
+    const pushOutput = (output: string, type: string = 'output') => {
+      setTerminalHistory(prev => [...prev, { output, type }]);
+    };
+    const findByName = (name: string) => files.find(f => f.name === name);
+    const nextId = () => Math.max(0, ...files.map(f => f.id)) + 1;
+
+    const [program, ...args] = tokenizeCommand(cmd);
+
+    switch (program) {
+      case 'help': {
+        pushOutput([
+          'Real commands (operate on your actual project files):',
+          '  ls [folder]              list files',
+          '  cat <file>               print file contents',
+          '  touch <file>             create an empty file',
+          '  mkdir <folder>           create a folder',
+          '  rm [-r] <name>           delete a file (or folder with -r)',
+          '  mv <old> <new>           rename a file or folder',
+          '  cp <src> <dest>          copy a file',
+          '  echo <text> [> file]     print text, optionally write to a file',
+          '  grep <pattern> [file]    search file contents',
+          '  find <name>              search files by name',
+          '  wc <file>                count lines/words/chars',
+          '  head/tail <file> [n]     show first/last n lines',
+          '  pwd, date, whoami        info commands',
+          '',
+          'Run real code (same sandboxed backend as the Run button):',
+          '  python3 <file>  |  node <file>  |  ruby <file>  |  php <file>  ...',
+          '',
+          'Not available here: persistent shell state between commands, real OS/network access, package installs that persist.',
+        ].join('\n'));
+        return;
+      }
+      case 'date': pushOutput(new Date().toLocaleString()); return;
+      case 'whoami': pushOutput(user?.name || 'guest'); return;
+      case 'pwd': pushOutput('/project'); return;
+
+      case 'ls': {
+        let list: FileState[];
+        if (args[0]) {
+          const folder = files.find(f => f.name === args[0] && f.type === 'folder');
+          if (!folder) { pushOutput(`ls: ${args[0]}: No such directory`, 'error'); return; }
+          list = files.filter(f => f.parentId === folder.id);
+        } else {
+          list = files.filter(f => f.parentId === null);
+        }
+        pushOutput(list.length ? list.map(f => f.type === 'folder' ? `${f.name}/` : f.name).join('  ') : '(empty)');
+        return;
+      }
+      case 'cat': {
+        if (!args[0]) { pushOutput('usage: cat <file>', 'error'); return; }
+        const file = findByName(args[0]);
+        if (!file || file.type !== 'file') { pushOutput(`cat: ${args[0]}: No such file`, 'error'); return; }
+        pushOutput(file.code || '(empty file)');
+        return;
+      }
+      case 'touch': {
+        if (!args[0]) { pushOutput('usage: touch <file>', 'error'); return; }
+        if (findByName(args[0])) { pushOutput(`touch: ${args[0]} already exists`, 'error'); return; }
+        setFiles(prev => [...prev, { id: nextId(), name: args[0], code: '', language: getLanguageFromFilename(args[0]), type: 'file', parentId: null }]);
+        pushOutput(`Created ${args[0]}`, 'success');
+        return;
+      }
+      case 'mkdir': {
+        if (!args[0]) { pushOutput('usage: mkdir <folder>', 'error'); return; }
+        if (findByName(args[0])) { pushOutput(`mkdir: ${args[0]} already exists`, 'error'); return; }
+        setFiles(prev => [...prev, { id: nextId(), name: args[0], code: '', language: '', type: 'folder', parentId: null, isOpen: true }]);
+        pushOutput(`Created directory ${args[0]}`, 'success');
+        return;
+      }
+      case 'rm': {
+        const recursive = args[0] === '-r' || args[0] === '-rf';
+        const name = recursive ? args[1] : args[0];
+        if (!name) { pushOutput('usage: rm [-r] <name>', 'error'); return; }
+        const target = findByName(name);
+        if (!target) { pushOutput(`rm: ${name}: No such file or directory`, 'error'); return; }
+        if (target.type === 'folder' && !recursive && files.some(f => f.parentId === target.id)) {
+          pushOutput(`rm: ${name}: is a directory (use -r)`, 'error'); return;
+        }
+        const idsToRemove = new Set([target.id]);
+        if (recursive) {
+          let changed = true;
+          while (changed) {
+            changed = false;
+            for (const f of files) {
+              if (f.parentId !== null && idsToRemove.has(f.parentId) && !idsToRemove.has(f.id)) {
+                idsToRemove.add(f.id);
+                changed = true;
+              }
+            }
+          }
+        }
+        setFiles(prev => prev.filter(f => !idsToRemove.has(f.id)));
+        pushOutput(`Removed ${name}`, 'success');
+        return;
+      }
+      case 'mv': {
+        if (!args[0] || !args[1]) { pushOutput('usage: mv <old> <new>', 'error'); return; }
+        const target = findByName(args[0]);
+        if (!target) { pushOutput(`mv: ${args[0]}: No such file or directory`, 'error'); return; }
+        if (findByName(args[1])) { pushOutput(`mv: ${args[1]}: already exists`, 'error'); return; }
+        setFiles(prev => prev.map(f => f.id === target.id ? { ...f, name: args[1] } : f));
+        pushOutput(`Renamed ${args[0]} to ${args[1]}`, 'success');
+        return;
+      }
+      case 'cp': {
+        if (!args[0] || !args[1]) { pushOutput('usage: cp <src> <dest>', 'error'); return; }
+        const src = findByName(args[0]);
+        if (!src || src.type !== 'file') { pushOutput(`cp: ${args[0]}: No such file`, 'error'); return; }
+        if (findByName(args[1])) { pushOutput(`cp: ${args[1]}: already exists`, 'error'); return; }
+        setFiles(prev => [...prev, { ...src, id: nextId(), name: args[1] }]);
+        pushOutput(`Copied ${args[0]} to ${args[1]}`, 'success');
+        return;
+      }
+      case 'echo': {
+        const redirectIdx = args.indexOf('>');
+        if (redirectIdx !== -1) {
+          const text = args.slice(0, redirectIdx).join(' ');
+          const target = args[redirectIdx + 1];
+          if (!target) { pushOutput('echo: missing filename after >', 'error'); return; }
+          const existing = findByName(target);
+          if (existing) {
+            setFiles(prev => prev.map(f => f.id === existing.id ? { ...f, code: text } : f));
+          } else {
+            setFiles(prev => [...prev, { id: nextId(), name: target, code: text, language: getLanguageFromFilename(target), type: 'file', parentId: null }]);
+          }
+          pushOutput(`Wrote to ${target}`, 'success');
+        } else {
+          pushOutput(args.join(' '));
+        }
+        return;
+      }
+      case 'grep': {
+        if (!args[0]) { pushOutput('usage: grep <pattern> [file]', 'error'); return; }
+        const scope = args[1] ? [findByName(args[1])].filter((f): f is FileState => !!f) : files.filter(f => f.type === 'file');
+        const matches: string[] = [];
+        for (const f of scope) {
+          f.code.split('\n').forEach((line, idx) => {
+            if (line.includes(args[0])) matches.push(`${f.name}:${idx + 1}: ${line.trim()}`);
+          });
+        }
+        pushOutput(matches.length ? matches.join('\n') : 'No matches found');
+        return;
+      }
+      case 'find': {
+        if (!args[0]) { pushOutput('usage: find <name>', 'error'); return; }
+        const matches = files.filter(f => f.name.toLowerCase().includes(args[0].toLowerCase()));
+        pushOutput(matches.length ? matches.map(f => f.name).join('\n') : 'No matches found');
+        return;
+      }
+      case 'wc': {
+        if (!args[0]) { pushOutput('usage: wc <file>', 'error'); return; }
+        const file = findByName(args[0]);
+        if (!file) { pushOutput(`wc: ${args[0]}: No such file`, 'error'); return; }
+        const lines = file.code.split('\n').length;
+        const words = file.code.split(/\s+/).filter(Boolean).length;
+        pushOutput(`${lines} ${words} ${file.code.length} ${args[0]}`);
+        return;
+      }
+      case 'head':
+      case 'tail': {
+        if (!args[0]) { pushOutput(`usage: ${program} <file> [n]`, 'error'); return; }
+        const file = findByName(args[0]);
+        if (!file) { pushOutput(`${program}: ${args[0]}: No such file`, 'error'); return; }
+        const n = parseInt(args[1] || '10', 10) || 10;
+        const lines = file.code.split('\n');
+        pushOutput((program === 'head' ? lines.slice(0, n) : lines.slice(-n)).join('\n'));
+        return;
+      }
+      case 'npm': {
+        if (args[0] === 'install' || args[0] === 'i') {
+          pushOutput('This sandboxed terminal has no persistent environment — an installed package would not be available to later commands or to your code. Add dependencies via package.json in the file explorer instead.', 'warn');
+        } else {
+          pushOutput(`npm: '${args.join(' ')}' is not supported in this sandboxed terminal.`, 'error');
+        }
+        return;
+      }
+    }
+
+    // Real script execution — routes through the same /api/execute backend
+    // the Run button uses (sandboxed Piston for python/javascript, JDoodle
+    // for others — see server.ts).
+    const interpreterLanguages: Record<string, string> = {
+      python3: 'python', python: 'python',
+      node: 'javascript',
+      ruby: 'ruby', php: 'php', go: 'go',
+    };
+    if (interpreterLanguages[program] && args[0]) {
+      const file = findByName(args[0]);
+      if (!file) { pushOutput(`${program}: can't open file '${args[0]}': No such file or directory`, 'error'); return; }
+      pushOutput(`Running ${args[0]}...`);
+      try {
+        const response = await fetch('/api/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: file.code, language: interpreterLanguages[program] })
+        });
+        const result = await response.json();
+        if (result.output) pushOutput(result.output, 'success');
+        if (result.error) pushOutput(result.error, 'error');
+        if (!result.output && !result.error) pushOutput('(no output)');
+      } catch (err: any) {
+        pushOutput(`Error reaching execution sandbox: ${err.message}`, 'error');
+      }
+      return;
+    }
+
+    pushOutput(`Command not found: ${program}. Type 'help' for available commands.`, 'error');
+  };
+
   const handleTerminalCommand = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      const cmd = terminalInput.trim();
-      let output = '';
-      if (cmd === 'ls') output = files.map(f => f.name).join('  ');
-      else if (cmd === 'npm install') output = 'Installing dependencies... Done.';
-      else if (cmd === 'help') output = 'Available commands: ls, npm install, clear, date, whoami, help';
-      else if (cmd === 'date') output = new Date().toLocaleString();
-      else if (cmd === 'whoami') output = user.name;
-      else if (cmd === 'clear') { setTerminalHistory([]); setTerminalInput(''); return; }
-      else output = `Command not found: ${cmd}. Type 'help' for available commands.`;
-      
-      setTerminalHistory(prev => [...prev, { cmd, output }]);
+      const cmd = terminalInput;
       setTerminalInput('');
+      runTerminalCommand(cmd);
     }
   };
 
