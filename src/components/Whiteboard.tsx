@@ -1,122 +1,165 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Stage, Layer, Line, Rect, Circle } from 'react-konva';
-import { Trash2, MousePointer2, Pencil, Square, Circle as CircleIcon, Download, Undo2 } from 'lucide-react';
+import { Trash2, Pencil, Square, Circle as CircleIcon, Download, Undo2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+
+interface Stroke {
+  tool: 'pen' | 'rect' | 'circle' | 'eraser';
+  points: number[];
+  color: string;
+}
 
 interface WhiteboardProps {
   socket?: any;
 }
 
+function useContainerSize(ref: React.RefObject<HTMLDivElement>) {
+  const [size, setSize] = useState({ width: 800, height: 600 });
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+      }
+    });
+    ro.observe(ref.current);
+    // Set initial size
+    setSize({ width: ref.current.offsetWidth, height: ref.current.offsetHeight });
+    return () => ro.disconnect();
+  }, [ref]);
+  return size;
+}
+
 export const Whiteboard: React.FC<WhiteboardProps> = ({ socket }) => {
   const [tool, setTool] = useState<'pen' | 'rect' | 'circle' | 'eraser'>('pen');
-  const [lines, setLines] = useState<any[]>([]);
+  const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [color, setColor] = useState('#0ea5e9');
   const isDrawing = useRef(false);
+  const stageRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { width, height } = useContainerSize(containerRef);
 
+  // Replay strokes from server when joining a room that already has drawings
   useEffect(() => {
     if (!socket) return;
 
-    const handleRemoteUpdate = (newLine: any) => {
-      setLines(prev => [...prev, newLine]);
+    const handleInit = (state: { strokes?: Stroke[] }) => {
+      if (state.strokes && state.strokes.length > 0) {
+        setStrokes(state.strokes);
+      }
     };
 
-    const handleRemoteClear = () => {
-      setLines([]);
+    const handleRemoteUpdate = (stroke: Stroke) => {
+      setStrokes(prev => [...prev, stroke]);
     };
 
+    const handleRemoteClear = () => setStrokes([]);
+
+    socket.on('init', handleInit);
     socket.on('whiteboard:update', handleRemoteUpdate);
     socket.on('whiteboard:clear', handleRemoteClear);
 
     return () => {
+      socket.off('init', handleInit);
       socket.off('whiteboard:update', handleRemoteUpdate);
       socket.off('whiteboard:clear', handleRemoteClear);
     };
   }, [socket]);
 
-  const handleMouseDown = (e: any) => {
+  // Unified pointer-down handler (mouse + touch)
+  const handlePointerDown = useCallback((e: any) => {
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
-    setLines([...lines, { tool, points: [pos.x, pos.y], color }]);
-  };
+    if (!pos) return;
+    const newStroke: Stroke = { tool, points: [pos.x, pos.y], color };
+    setStrokes(prev => [...prev, newStroke]);
+  }, [tool, color]);
 
-  const handleMouseMove = (e: any) => {
+  // Unified pointer-move handler — fully immutable update (no splice/mutation)
+  const handlePointerMove = useCallback((e: any) => {
     if (!isDrawing.current) return;
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
-    let lastLine = lines[lines.length - 1];
-    
-    if (tool === 'pen' || tool === 'eraser') {
-      lastLine.points = lastLine.points.concat([point.x, point.y]);
-    } else if (tool === 'rect' || tool === 'circle') {
-      // For shapes, we update the second point
-      lastLine.points[2] = point.x;
-      lastLine.points[3] = point.y;
-    }
+    if (!point) return;
 
-    lines.splice(lines.length - 1, 1, lastLine);
-    setLines(lines.concat());
-  };
+    setStrokes(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      let updatedPoints: number[];
+      if (last.tool === 'pen' || last.tool === 'eraser') {
+        updatedPoints = [...last.points, point.x, point.y];
+      } else {
+        // rect / circle: update the drag endpoint (indices 2 & 3)
+        updatedPoints = [last.points[0], last.points[1], point.x, point.y];
+      }
+      return [
+        ...prev.slice(0, -1),
+        { ...last, points: updatedPoints },
+      ];
+    });
+  }, []);
 
-  const handleMouseUp = () => {
+  // Unified pointer-up handler — emit completed stroke to collaborators
+  const handlePointerUp = useCallback(() => {
+    if (!isDrawing.current) return;
     isDrawing.current = false;
-    // Here we would emit the final line/shape to the socket for collaboration
     if (socket) {
-      socket.emit('whiteboard:update', lines[lines.length - 1]);
+      setStrokes(prev => {
+        if (prev.length > 0) {
+          socket.emit('whiteboard:update', prev[prev.length - 1]);
+        }
+        return prev;
+      });
     }
-  };
+  }, [socket]);
 
-  const clearCanvas = () => {
-    setLines([]);
+  const clearCanvas = useCallback(() => {
+    setStrokes([]);
     if (socket) socket.emit('whiteboard:clear');
-  };
+  }, [socket]);
 
-  const undo = () => {
-    setLines(lines.slice(0, -1));
-  };
+  const undo = useCallback(() => {
+    setStrokes(prev => prev.slice(0, -1));
+  }, []);
 
-  const downloadImage = () => {
+  const downloadImage = useCallback(() => {
+    if (!stageRef.current) return;
     const uri = stageRef.current.toDataURL();
     const link = document.createElement('a');
-    link.download = 'whiteboard-design.png';
+    link.download = 'whiteboard.png';
     link.href = uri;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, []);
 
-  const stageRef = useRef<any>(null);
+  const TOOLS = [
+    { id: 'pen' as const,    icon: Pencil,      title: 'Pen' },
+    { id: 'rect' as const,   icon: Square,      title: 'Rectangle' },
+    { id: 'circle' as const, icon: CircleIcon,  title: 'Circle' },
+  ];
 
   return (
-    <div className="flex flex-col h-full bg-white overflow-hidden relative">
+    <div ref={containerRef} className="flex flex-col h-full bg-white overflow-hidden relative select-none">
       {/* Toolbar */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 bg-white/90 backdrop-blur shadow-xl border border-black/5 p-2 rounded-2xl">
-        <button 
-          onClick={() => setTool('pen')}
-          className={cn("p-2 rounded-xl transition-all", tool === 'pen' ? "bg-accent text-white shadow-lg shadow-accent/20" : "hover:bg-black/5 text-black/60")}
-          title="Pencil"
-        >
-          <Pencil className="w-4 h-4" />
-        </button>
-        <button 
-          onClick={() => setTool('rect')}
-          className={cn("p-2 rounded-xl transition-all", tool === 'rect' ? "bg-accent text-white shadow-lg shadow-accent/20" : "hover:bg-black/5 text-black/60")}
-          title="Rectangle"
-        >
-          <Square className="w-4 h-4" />
-        </button>
-        <button 
-          onClick={() => setTool('circle')}
-          className={cn("p-2 rounded-xl transition-all", tool === 'circle' ? "bg-accent text-white shadow-lg shadow-accent/20" : "hover:bg-black/5 text-black/60")}
-          title="Circle"
-        >
-          <CircleIcon className="w-4 h-4" />
-        </button>
+        {TOOLS.map(({ id, icon: Icon, title }) => (
+          <button
+            key={id}
+            onClick={() => setTool(id)}
+            className={cn("p-2 rounded-xl transition-all", tool === id ? "bg-accent text-white shadow-lg shadow-accent/20" : "hover:bg-black/5 text-black/60")}
+            title={title}
+          >
+            <Icon className="w-4 h-4" />
+          </button>
+        ))}
         <div className="w-px h-6 bg-black/10 mx-1" />
-        <input 
-          type="color" 
-          value={color} 
-          onChange={(e) => setColor(e.target.value)}
+        <input
+          type="color"
+          value={color}
+          onChange={e => setColor(e.target.value)}
           className="w-8 h-8 rounded-lg cursor-pointer border-none bg-transparent"
+          title="Stroke color"
         />
         <div className="w-px h-6 bg-black/10 mx-1" />
         <button onClick={undo} className="p-2 rounded-xl hover:bg-black/5 text-black/60" title="Undo">
@@ -125,79 +168,60 @@ export const Whiteboard: React.FC<WhiteboardProps> = ({ socket }) => {
         <button onClick={clearCanvas} className="p-2 rounded-xl hover:bg-red-50 text-red-500" title="Clear All">
           <Trash2 className="w-4 h-4" />
         </button>
-        <button onClick={downloadImage} className="p-2 rounded-xl hover:bg-black/5 text-black/60" title="Download">
+        <button onClick={downloadImage} className="p-2 rounded-xl hover:bg-black/5 text-black/60" title="Download PNG">
           <Download className="w-4 h-4" />
         </button>
       </div>
 
       <Stage
-        width={window.innerWidth}
-        height={window.innerHeight}
-        onMouseDown={handleMouseDown}
-        onMousemove={handleMouseMove}
-        onMouseup={handleMouseUp}
         ref={stageRef}
+        width={width}
+        height={height}
+        onMouseDown={handlePointerDown}
+        onMouseMove={handlePointerMove}
+        onMouseUp={handlePointerUp}
+        onMouseLeave={handlePointerUp}
+        onTouchStart={handlePointerDown}
+        onTouchMove={handlePointerMove}
+        onTouchEnd={handlePointerUp}
         className="cursor-crosshair"
       >
         <Layer>
-          {lines.map((line, i) => {
-            if (line.tool === 'pen' || line.tool === 'eraser') {
+          {strokes.map((stroke, i) => {
+            if (stroke.tool === 'pen' || stroke.tool === 'eraser') {
               return (
                 <Line
                   key={i}
-                  points={line.points}
-                  stroke={line.color}
-                  strokeWidth={5}
+                  points={stroke.points}
+                  stroke={stroke.color}
+                  strokeWidth={stroke.tool === 'eraser' ? 20 : 4}
                   tension={0.5}
                   lineCap="round"
                   lineJoin="round"
-                  globalCompositeOperation={
-                    line.tool === 'eraser' ? 'destination-out' : 'source-over'
-                  }
+                  globalCompositeOperation={stroke.tool === 'eraser' ? 'destination-out' : 'source-over'}
                 />
               );
-            } else if (line.tool === 'rect') {
-              const x = line.points[0];
-              const y = line.points[1];
-              const width = (line.points[2] || x) - x;
-              const height = (line.points[3] || y) - y;
+            }
+            if (stroke.tool === 'rect') {
+              const [x, y, x2 = x, y2 = y] = stroke.points;
               return (
-                <Rect
-                  key={i}
-                  x={x}
-                  y={y}
-                  width={width}
-                  height={height}
-                  stroke={line.color}
-                  strokeWidth={2}
-                />
+                <Rect key={i} x={x} y={y} width={x2 - x} height={y2 - y} stroke={stroke.color} strokeWidth={2} />
               );
-            } else if (line.tool === 'circle') {
-              const x = line.points[0];
-              const y = line.points[1];
-              const radius = Math.sqrt(
-                Math.pow((line.points[2] || x) - x, 2) + 
-                Math.pow((line.points[3] || y) - y, 2)
-              );
+            }
+            if (stroke.tool === 'circle') {
+              const [x, y, x2 = x, y2 = y] = stroke.points;
+              const radius = Math.sqrt(Math.pow(x2 - x, 2) + Math.pow(y2 - y, 2));
               return (
-                <Circle
-                  key={i}
-                  x={x}
-                  y={y}
-                  radius={radius}
-                  stroke={line.color}
-                  strokeWidth={2}
-                />
+                <Circle key={i} x={x} y={y} radius={radius} stroke={stroke.color} strokeWidth={2} />
               );
             }
             return null;
           })}
         </Layer>
       </Stage>
-      
-      {/* Hint */}
-      <div className="absolute bottom-4 right-4 text-[10px] text-black/30 font-mono">
-        Collaborative Whiteboard Mode Active
+
+      <div className="absolute bottom-4 right-4 text-[10px] text-black/30 font-mono pointer-events-none">
+        Collaborative Whiteboard · {strokes.length} stroke{strokes.length !== 1 ? 's' : ''}
       </div>
     </div>
   );
