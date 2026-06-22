@@ -668,12 +668,12 @@ app.use((req, res, next) => {
   // (2) whiteboard:update / whiteboard:clear broadcast globally
   // unconditionally, room or not. State is now scoped per room, and
   // nothing is ever broadcast outside the sender's own room.
-  const roomStates = new Map<string, { files: Record<string, any>; cursors: Record<string, any> }>();
+  const roomStates = new Map<string, { files: Record<string, any>; cursors: Record<string, any>; strokes: any[] }>();
 
   function getRoomState(roomId: string) {
     let state = roomStates.get(roomId);
     if (!state) {
-      state = { files: {}, cursors: {} };
+      state = { files: {}, cursors: {}, strokes: [] };
       roomStates.set(roomId, state);
     }
     return state;
@@ -733,12 +733,15 @@ app.use((req, res, next) => {
     socket.on("whiteboard:update", (data) => {
       const roomId = (socket as any).roomId;
       if (!roomId) return;
+      // Persist stroke so late joiners receive the full canvas on init
+      getRoomState(roomId).strokes.push(data);
       socket.to(roomId).emit("whiteboard:update", data);
     });
 
     socket.on("whiteboard:clear", () => {
       const roomId = (socket as any).roomId;
       if (!roomId) return;
+      getRoomState(roomId).strokes = [];
       socket.to(roomId).emit("whiteboard:clear");
     });
 
