@@ -1,72 +1,81 @@
 import React from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
-import { Sparkles, Zap, Shield, Globe, Cpu, Code2, Rocket, Heart, Brain, Layers } from 'lucide-react';
+import { Sparkles, Zap, Shield, Globe, Cpu, Code2, Rocket, Heart, Brain, Layers, Terminal, GitBranch, Play, Lock } from 'lucide-react';
 
+// ── Real changelog / feature blog posts ──────────────────────────────────────
+// These describe what the app actually does. No fabricated capabilities.
 const blogPosts = [
   {
-    title: "Neural Synthesis Engine v3.0",
-    description: "Our latest update introduces the synthesis engine that predicts architectural patterns before you even type a character.",
-    image: "https://picsum.photos/seed/neural-network/1200/800",
+    title: "Sandboxed Code Execution",
+    description: "Run Python, JavaScript, TypeScript, Java, C++, Go, Ruby and more directly in the IDE. Every execution runs in an isolated Piston sandbox — your server's filesystem and secrets are never touched. Real output, real errors, fully safe.",
+    image: "https://picsum.photos/seed/code-execution-sandbox/1200/800",
+    icon: Terminal,
+    color: "text-accent",
+    tag: "Security"
+  },
+  {
+    title: "AI-Powered Code Generation",
+    description: "Describe what you want in plain English and Gemini generates complete, working code across all supported languages. Ghost-text inline autocomplete, smart refactoring, one-click debug, and fast-fix suggestions make every edit faster.",
+    image: "https://picsum.photos/seed/ai-coding-assistant/1200/800",
     icon: Sparkles,
-    color: "text-accent"
+    color: "text-blue-400",
+    tag: "AI"
   },
   {
-    title: "Quantum Compiler Integration",
-    description: "Experience the power of parallel processing with our new quantum-inspired compiler, delivering instant builds for massive projects.",
-    image: "https://picsum.photos/seed/quantum-computer/1200/800",
-    icon: Cpu,
-    color: "text-blue-400"
-  },
-  {
-    title: "Cybernetic UI Framework",
-    description: "A new design system that adapts to your neural patterns, creating interfaces that feel like an extension of your mind.",
-    image: "https://picsum.photos/seed/cyber-tech/1200/800",
-    icon: Zap,
-    color: "text-yellow-400"
+    title: "Real-Time Collaborative Editing",
+    description: "Share a room link and code together live. File edits, cursor positions, and whiteboard strokes sync instantly over WebSockets. Late joiners receive the full canvas replay — not a blank screen.",
+    image: "https://picsum.photos/seed/realtime-collaboration/1200/800",
+    icon: Globe,
+    color: "text-emerald-400",
+    tag: "Collaboration"
   }
 ];
 
+// ── How it works — real steps ─────────────────────────────────────────────────
 const processSteps = [
-  { 
-    title: "1. Neural Handshake", 
-    desc: "Establish a high-bandwidth connection between your intent and our processing core via secure biometric authentication.",
-    icon: Zap
+  {
+    title: "1. Open or Generate",
+    desc: "Start from scratch, paste existing code, or describe what you want to build. Gemini generates a complete project structure with real, runnable files.",
+    icon: Sparkles
   },
-  { 
-    title: "2. Logic Extraction", 
-    desc: "Our AI parses your natural language requirements into a multi-dimensional logic graph, identifying dependencies instantly.",
-    icon: Brain
+  {
+    title: "2. Edit with AI Assist",
+    desc: "Monaco Editor with syntax highlighting, ghost-text autocomplete, and inline AI suggestions. Stage and commit changes directly to your GitHub repo from the Source Control panel.",
+    icon: Code2
   },
-  { 
-    title: "3. Automated Assembly", 
-    desc: "The machine assembles the application layer by layer, optimizing for performance, security, and scalability in real-time.",
-    icon: Cpu
+  {
+    title: "3. Run & Test",
+    desc: "Hit Run to execute your code in a real sandboxed environment. The Test panel generates and runs genuine unit tests against your actual logic — results come from real execution, not hardcoded fixtures.",
+    icon: Play
   },
-  { 
-    title: "4. Hyper-Scale Launch", 
-    desc: "Deploy across global edge nodes with zero downtime. Your application is instantly available to billions of users.",
+  {
+    title: "4. Collaborate & Deploy",
+    desc: "Share your room link to code live with teammates on the same canvas. Push all staged files atomically to GitHub in one commit via the Git Trees API — supports any number of files and full Unicode.",
     icon: Rocket
   }
 ];
 
+// ── Real tech stack ───────────────────────────────────────────────────────────
 const webUses = [
-  { title: "AI Core", desc: "Proprietary neural networks optimized for code generation." },
-  { title: "3D Rendering", desc: "Hardware-accelerated visuals for an immersive experience." },
-  { title: "Real-time Sync", desc: "Zero-latency state synchronization across all devices." },
-  { title: "Secure Vault", desc: "Military-grade encryption for your intellectual property." }
+  { title: "Gemini AI", desc: "Google Gemini powers code generation, debugging, autocomplete, and the live voice coding session." },
+  { title: "Monaco Editor", desc: "The same editor engine as VS Code — full syntax highlighting, IntelliSense, and multi-file tabs." },
+  { title: "Socket.IO", desc: "Room-scoped WebSockets for real-time code sync, cursor sharing, and collaborative whiteboard strokes." },
+  { title: "AES-256 Encryption", desc: "Your stored API keys are encrypted at rest using AES-256-CBC before being written to the database." }
 ];
 
+// ── Feature highlights — all real ────────────────────────────────────────────
 const features = [
-  { title: "Neural Pair", icon: Cpu, desc: "AI that writes code alongside you." },
-  { title: "Multi-Stack", icon: Code2, desc: "Support for 20+ modern languages." },
-  { title: "Fast Launch", icon: Rocket, desc: "Idea to live preview in seconds." },
-  { title: "Global Sync", icon: Globe, desc: "Direct GitHub & Cloud integration." }
+  { title: "AI Pair Coder", icon: Brain, desc: "Gemini generates, debugs, refactors, and explains your code in any supported language." },
+  { title: "30+ Languages", icon: Code2, desc: "Python, JS/TS, Java, C/C++, Go, Ruby, PHP, Rust, Swift, Kotlin, and more — all with real sandboxed execution." },
+  { title: "Live Preview", icon: Play, desc: "Instant HTML/CSS/JS preview with a real debugger bridge — breakpoints, step-through, and console capture." },
+  { title: "GitHub Push", icon: GitBranch, desc: "Atomic multi-file commits via the Git Trees API. Staged changes pushed in one real commit, full Unicode safe." }
 ];
 
+// ── Real deployment facts ─────────────────────────────────────────────────────
 const deploymentSteps = [
-  { title: "Full-Stack Power", desc: "Node.js backend for real-time APIs and logic." },
-  { title: "Cloud Native", desc: "Deploy to Google Cloud Run or Vercel instantly." },
-  { title: "Git Integration", desc: "Keep your version history in sync with GitHub." }
+  { title: "Node.js + Express Backend", desc: "The server handles OAuth (GitHub + Google), sandboxed code execution, per-user encrypted key storage, and Socket.IO real-time rooms — all on a single Render web service." },
+  { title: "React + Vite Frontend", desc: "Built with React, Tailwind CSS v4, Framer Motion, Monaco Editor, and React-Konva for the collaborative whiteboard. Deployed on Vercel with zero build config." },
+  { title: "SQLite + Firebase", desc: "SQLite (better-sqlite3) stores user projects, Vercel-clone records, and encrypted API keys on the server. Firebase handles Auth and Firestore for cloud-synced user profiles." }
 ];
 
 function Card3D({ children, className }: { children: React.ReactNode, className?: string }) {
@@ -100,19 +109,17 @@ function Card3D({ children, className }: { children: React.ReactNode, className?
 export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, onNavigateAbout: () => void }) {
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary custom-scrollbar perspective-1000">
-      {/* Hero Section */}
+
+      {/* Hero */}
       <section className="relative h-screen flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
-          <img 
-            src="https://picsum.photos/seed/cyber-city/1920/1080?blur=1" 
-            alt="AI Background" 
+          <img
+            src="https://picsum.photos/seed/ide-dark-workspace/1920/1080?blur=1"
+            alt="VibeCoding workspace"
             className="w-full h-full object-cover opacity-30 scale-110"
             referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-bg-primary/20 via-bg-primary/60 to-bg-primary" />
-          
-          {/* Animated Grid */}
-          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20" />
           <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:50px_50px]" />
         </div>
 
@@ -123,165 +130,126 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
             className="inline-flex items-center gap-3 px-6 py-2 rounded-full bg-accent/10 border border-accent/30 text-accent text-[10px] font-black uppercase tracking-[0.4em] backdrop-blur-md"
           >
             <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-            System Online: Neural Core v3
+            Browser-Based AI IDE · Built for Developers
           </motion.div>
-          
+
           <div className="space-y-4">
-            <motion.h1 
+            <motion.h1
               initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, type: "spring", stiffness: 100 }}
               className="text-4xl sm:text-6xl md:text-7xl lg:text-[10rem] font-black tracking-tighter leading-[0.8] uppercase italic"
             >
-              The Machine <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent via-blue-400 to-purple-500">That Codes.</span>
+              Vibe<br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent via-blue-400 to-purple-500">Coding.</span>
             </motion.h1>
           </div>
 
-          <motion.p 
+          <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
             className="text-sm md:text-xl text-text-secondary max-w-3xl mx-auto font-medium leading-relaxed opacity-80"
           >
-            Nexus Forge is a high-performance, AI-driven integrated development environment. It leverages massive neural networks to transform your ideas into production-ready software at the speed of thought.
+            A full-featured, AI-assisted coding environment that runs entirely in the browser. Write, run, debug, collaborate, and push to GitHub — without installing anything.
           </motion.p>
 
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 pt-8"
           >
-            <button 
+            <button
               onClick={onBack}
               className="w-full sm:w-auto group relative px-8 md:px-12 py-4 md:py-5 bg-accent text-accent-foreground rounded-2xl font-black uppercase tracking-widest overflow-hidden transition-all hover:scale-105 active:scale-95 shadow-[0_0_50px_rgba(var(--accent-rgb),0.4)]"
             >
               <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500 skew-x-12" />
-              <span className="relative z-10">Enter Workspace</span>
+              <span className="relative z-10">Open the IDE</span>
             </button>
-            <button 
+            <button
               onClick={onNavigateAbout}
-              className="w-full sm:w-auto px-8 md:px-12 py-4 md:py-5 bg-white/5 border border-white/10 text-white rounded-2xl font-black uppercase tracking-widest hover:bg-white/10 transition-all backdrop-blur-md"
+              className="w-full sm:w-auto px-8 md:px-12 py-4 md:py-5 rounded-2xl font-black uppercase tracking-widest border border-white/10 hover:bg-white/5 transition-all"
             >
-              About Us
+              Learn More
             </button>
           </motion.div>
         </div>
 
-        {/* Floating 3D Elements */}
-        <motion.div 
-          animate={{ y: [0, -40, 0], rotate: [0, 10, 0] }}
-          transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute top-1/4 left-10 w-24 h-24 bg-accent/10 border border-accent/20 rounded-3xl backdrop-blur-xl hidden lg:flex items-center justify-center"
+        {/* Scroll indicator */}
+        <motion.div
+          animate={{ y: [0, 12, 0] }}
+          transition={{ duration: 2, repeat: Infinity }}
+          className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-text-secondary/40"
         >
-          <Cpu className="w-10 h-10 text-accent opacity-40" />
-        </motion.div>
-        <motion.div 
-          animate={{ y: [0, 40, 0], rotate: [0, -10, 0] }}
-          transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-          className="absolute bottom-1/4 right-10 w-32 h-32 bg-blue-500/10 border border-blue-500/20 rounded-[2.5rem] backdrop-blur-xl hidden lg:flex items-center justify-center"
-        >
-          <Zap className="w-12 h-12 text-blue-400 opacity-40" />
+          <div className="w-px h-16 bg-gradient-to-b from-transparent to-current" />
+          <span className="text-[9px] font-black uppercase tracking-[0.3em]">Scroll</span>
         </motion.div>
       </section>
 
-      {/* How it Works - The Process */}
-      <section className="max-w-7xl mx-auto px-6 py-20 md:py-40">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 md:gap-24 items-center">
-          <div className="space-y-10 md:space-y-16">
-            <div className="space-y-4 md:space-y-6">
-              <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">The Workflow</h2>
-              <h3 className="text-4xl md:text-7xl font-black tracking-tighter uppercase leading-none">How to Process <br />Your Application.</h3>
-            </div>
-            <div className="space-y-8 md:space-y-10">
-              {processSteps.map((step, i) => (
-                <motion.div 
-                  key={i}
-                  initial={{ opacity: 0, x: -30 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.1 }}
-                  className="flex gap-8 group"
-                >
-                  <div className="shrink-0 w-16 h-16 rounded-[1.5rem] bg-white/5 border border-white/10 flex items-center justify-center text-accent group-hover:bg-accent group-hover:text-accent-foreground transition-all duration-500 shadow-xl">
-                    <step.icon className="w-7 h-7" />
-                  </div>
-                  <div className="space-y-3">
-                    <h4 className="text-xl font-black uppercase tracking-tight">{step.title}</h4>
-                    <p className="text-base text-text-secondary leading-relaxed opacity-70">{step.desc}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-          
-          <Card3D className="relative aspect-[4/5]">
-            <div className="absolute -inset-10 bg-accent/20 blur-[120px] rounded-full opacity-40 animate-pulse" />
-            <div className="relative h-full rounded-[4rem] overflow-hidden border border-white/10 shadow-2xl group">
-              <img 
-                src="https://picsum.photos/seed/tech-robot/1000/1250" 
-                alt="Process Visual" 
-                className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-transparent to-transparent opacity-60" />
-              <div className="absolute bottom-12 left-12 right-12 p-8 bg-white/5 backdrop-blur-2xl rounded-3xl border border-white/10">
-                <p className="text-sm font-bold uppercase tracking-widest text-accent mb-2">Active Processing</p>
-                <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                  <motion.div 
-                    animate={{ x: ["-100%", "100%"] }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                    className="h-full w-1/3 bg-accent"
-                  />
-                </div>
+      {/* How It Works */}
+      <section className="max-w-7xl mx-auto px-6 py-20 md:py-40 space-y-16">
+        <div className="space-y-4 text-center">
+          <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">How It Works</h2>
+          <h3 className="text-4xl md:text-6xl font-black tracking-tighter uppercase">From idea to GitHub<br />in one session.</h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          {processSteps.map((step, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.1 }}
+              className="p-8 bg-bg-secondary border border-white/5 rounded-[2.5rem] space-y-5 hover:border-accent/20 transition-all"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-accent/10 flex items-center justify-center">
+                <step.icon className="w-5 h-5 text-accent" />
               </div>
-            </div>
-          </Card3D>
+              <h4 className="text-base font-black uppercase tracking-tight">{step.title}</h4>
+              <p className="text-sm text-text-secondary leading-relaxed opacity-60">{step.desc}</p>
+            </motion.div>
+          ))}
         </div>
       </section>
 
-      {/* Web Uses Section */}
-      <section className="bg-bg-secondary py-20 md:py-40 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-        <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-        
-        <div className="max-w-7xl mx-auto px-6 space-y-16 md:space-y-24">
-          <div className="text-center space-y-4 md:space-y-6">
-            <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">Capabilities</h2>
-            <h3 className="text-4xl md:text-8xl font-black tracking-tighter uppercase">What My Web Uses.</h3>
+      {/* Real Tech Stack */}
+      <section className="bg-bg-secondary py-20 md:py-40">
+        <div className="max-w-7xl mx-auto px-6 space-y-16">
+          <div className="text-center space-y-4">
+            <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">Under The Hood</h2>
+            <h3 className="text-4xl md:text-6xl font-black tracking-tighter uppercase">Real tech.<br />No buzzwords.</h3>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {webUses.map((use, i) => (
-              <Card3D 
+              <Card3D
                 key={i}
-                className="p-10 bg-bg-primary border border-white/5 rounded-[3rem] space-y-6 hover:border-accent/40 transition-all group"
+                className="p-8 bg-bg-primary border border-white/5 rounded-[2.5rem] space-y-4 hover:border-accent/20 transition-all cursor-default"
               >
-                <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center text-accent group-hover:scale-110 transition-transform shadow-lg">
-                  <Layers className="w-7 h-7" />
+                <div className="w-10 h-10 rounded-2xl bg-accent/10 flex items-center justify-center">
+                  <Cpu className="w-5 h-5 text-accent" />
                 </div>
-                <div className="space-y-3">
-                  <h4 className="text-xl font-black uppercase tracking-tight">{use.title}</h4>
-                  <p className="text-sm text-text-secondary leading-relaxed opacity-60">{use.desc}</p>
-                </div>
+                <h4 className="text-lg font-black uppercase tracking-tight">{use.title}</h4>
+                <p className="text-sm text-text-secondary leading-relaxed opacity-60">{use.desc}</p>
               </Card3D>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Blog Posts Grid */}
-      <section className="max-w-7xl mx-auto px-6 py-20 md:py-40 space-y-12 md:space-y-20">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-8">
-          <div className="space-y-3 md:space-y-4">
-            <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">Intelligence Feed</h2>
-            <h3 className="text-4xl md:text-5xl font-black tracking-tighter uppercase">Latest Insights.</h3>
+      {/* Feature blog posts */}
+      <section className="max-w-7xl mx-auto px-6 py-20 md:py-40 space-y-16">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div className="space-y-3">
+            <h2 className="text-sm font-black text-accent uppercase tracking-[0.4em]">Feature Deep-Dives</h2>
+            <h3 className="text-4xl md:text-5xl font-black tracking-tighter uppercase">What's actually<br />inside.</h3>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
           {blogPosts.map((post, i) => (
-            <motion.div 
+            <motion.div
               key={i}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -290,38 +258,38 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
               className="group bg-bg-secondary border border-white/5 rounded-[3rem] overflow-hidden hover:border-accent/40 transition-all shadow-2xl"
             >
               <div className="aspect-[4/3] overflow-hidden relative">
-                <img 
-                  src={post.image} 
-                  alt={post.title} 
+                <img
+                  src={post.image}
+                  alt={post.title}
                   className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-700"
                   referrerPolicy="no-referrer"
                 />
-                <div className="absolute inset-0 bg-accent/20 opacity-0 group-hover:opacity-20 transition-opacity" />
+                <div className="absolute top-4 left-4 px-3 py-1 rounded-full bg-black/60 backdrop-blur text-[9px] font-black uppercase tracking-widest text-white/70">
+                  {post.tag}
+                </div>
               </div>
               <div className="p-10 space-y-6">
                 <div className={`p-3 rounded-2xl bg-white/5 w-fit ${post.color} shadow-lg`}>
                   <post.icon className="w-6 h-6" />
                 </div>
                 <h3 className="text-2xl font-black leading-tight uppercase tracking-tight">{post.title}</h3>
-                <p className="text-sm text-text-secondary leading-relaxed opacity-70">
-                  {post.description}
-                </p>
+                <p className="text-sm text-text-secondary leading-relaxed opacity-70">{post.description}</p>
               </div>
             </motion.div>
           ))}
         </div>
       </section>
 
-      {/* 3D Visual Section */}
-      <section className="bg-bg-secondary py-20 md:py-40 overflow-hidden relative">
+      {/* Feature Grid */}
+      <section className="bg-bg-secondary py-20 md:py-40">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 md:gap-24 items-center">
           <div className="space-y-8 md:space-y-12">
             <h2 className="text-4xl md:text-7xl font-black tracking-tighter leading-[0.9] uppercase">
-              Immersive <br />
-              <span className="text-accent italic">3D Intelligence.</span>
+              Everything <br />
+              <span className="text-accent italic">in one tab.</span>
             </h2>
             <p className="text-text-secondary text-lg md:text-xl leading-relaxed opacity-80">
-              Our AI doesn't just see text; it understands the multi-dimensional structure of your application. Experience a development environment that feels alive.
+              Monaco Editor, AI assistant, sandboxed terminal, live preview with debugger, collaborative whiteboard, GitHub push, API playground — no extensions, no install, no config.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 md:gap-10">
               {features.map((f, i) => (
@@ -335,56 +303,51 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
               ))}
             </div>
           </div>
-          
+
           <div className="relative aspect-square">
             <div className="absolute inset-0 bg-accent/20 blur-[150px] rounded-full opacity-20" />
-            <motion.div 
-              animate={{ 
-                rotateY: [0, 360],
-                rotateX: [0, 15, 0]
-              }}
+            <motion.div
+              animate={{ rotateY: [0, 360], rotateX: [0, 15, 0] }}
               transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
               className="w-full h-full rounded-[4rem] overflow-hidden border border-accent/30 shadow-[0_0_120px_rgba(var(--accent-rgb),0.2)] bg-bg-primary"
             >
-              <img 
-                src="https://picsum.photos/seed/tech-3d-render/1200/1200" 
-                alt="3D Render" 
+              <img
+                src="https://picsum.photos/seed/code-editor-dark/1200/1200"
+                alt="IDE interface"
                 className="w-full h-full object-cover opacity-80"
                 referrerPolicy="no-referrer"
               />
             </motion.div>
-            
-            {/* Floating UI elements */}
-            <motion.div 
+            <motion.div
               animate={{ y: [0, -30, 0] }}
               transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
               className="absolute -top-10 -right-10 bg-accent text-accent-foreground px-8 py-4 rounded-3xl shadow-2xl font-black text-xs uppercase tracking-widest backdrop-blur-md"
             >
-              Neural Precision: 99.9%
+              Real Execution ✓
             </motion.div>
-            <motion.div 
+            <motion.div
               animate={{ y: [0, 30, 0] }}
               transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
               className="absolute -bottom-10 -left-10 bg-bg-primary border border-white/10 px-8 py-4 rounded-3xl shadow-2xl text-xs backdrop-blur-md"
             >
               <div className="flex items-center gap-3 text-emerald-400 font-black uppercase tracking-widest">
                 <Zap className="w-4 h-4" />
-                Active Sync
+                Socket.IO Live Sync
               </div>
             </motion.div>
           </div>
         </div>
       </section>
 
-      {/* Deployment Guide Section */}
+      {/* Real Architecture */}
       <section className="max-w-7xl mx-auto px-6 py-20 md:py-40">
         <div className="bg-gradient-to-br from-accent/10 via-bg-secondary to-purple-500/10 border border-white/10 rounded-[3rem] md:rounded-[5rem] p-8 md:p-24 space-y-12 md:space-y-20 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-96 h-96 bg-accent/10 blur-[150px] rounded-full" />
-          
+
           <div className="text-center space-y-6 relative z-10">
-            <h2 className="text-5xl md:text-7xl font-black tracking-tighter uppercase">Deployment Guide.</h2>
+            <h2 className="text-5xl md:text-7xl font-black tracking-tighter uppercase">Architecture.</h2>
             <p className="text-text-secondary max-w-2xl mx-auto text-lg opacity-70">
-              Why your project needs more than just static hosting.
+              The real stack powering VibeCoding — every layer you can inspect, fork, and deploy yourself.
             </p>
           </div>
 
@@ -400,11 +363,25 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
             ))}
           </div>
 
-          <div className="p-8 bg-red-500/5 border border-red-500/10 rounded-3xl relative z-10">
-            <p className="text-xs text-red-400/80 text-center font-medium leading-relaxed">
-              <strong className="text-red-400 uppercase tracking-widest mr-2">Note on GitHub Pages:</strong> GitHub Pages is designed for static websites (HTML/CSS/JS only). Since Nexus Forge projects often include a Node.js backend for AI processing and real-time features, they require a full-stack host like Google Cloud Run or Vercel.
+          <div className="p-8 bg-emerald-500/5 border border-emerald-500/10 rounded-3xl relative z-10">
+            <p className="text-xs text-emerald-400/80 text-center font-medium leading-relaxed">
+              <strong className="text-emerald-400 uppercase tracking-widest mr-2">Open & Self-Hostable:</strong>
+              VibeCoding runs on standard Node.js and can be deployed on any provider that supports it — Render, Railway, Fly.io, or your own VPS. No proprietary lock-in.
             </p>
           </div>
+        </div>
+      </section>
+
+      {/* Security callout */}
+      <section className="max-w-7xl mx-auto px-6 pb-20 md:pb-40">
+        <div className="p-10 md:p-16 border border-white/5 rounded-[3rem] bg-bg-secondary space-y-8 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto">
+            <Lock className="w-7 h-7 text-accent" />
+          </div>
+          <h3 className="text-3xl md:text-5xl font-black tracking-tighter uppercase">Security by design.</h3>
+          <p className="text-text-secondary max-w-2xl mx-auto opacity-70 leading-relaxed">
+            User code never runs on the server's own process. Sandboxed execution (Piston) ensures complete isolation. API keys are AES-256 encrypted at rest. Socket.IO rooms are auth-scoped — no cross-user data leakage. OAuth flows use server-validated origin checks on every callback.
+          </p>
         </div>
       </section>
 
@@ -414,10 +391,10 @@ export default function Blog({ onBack, onNavigateAbout }: { onBack: () => void, 
           <div className="p-2 bg-accent/10 rounded-xl">
             <Code2 className="w-6 h-6 text-accent" />
           </div>
-          <span className="text-2xl font-black tracking-tighter uppercase">Nexus Forge</span>
+          <span className="text-2xl font-black tracking-tighter uppercase">VibeCoding</span>
         </div>
         <p className="text-xs text-text-secondary flex items-center justify-center gap-2 font-black uppercase tracking-[0.2em] opacity-40">
-          Made with <Heart className="w-4 h-4 text-red-500 fill-red-500" /> by the Nexus Team.
+          Made with <Heart className="w-4 h-4 text-red-500 fill-red-500" /> for developers who build.
         </p>
       </footer>
     </div>
