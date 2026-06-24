@@ -2,9 +2,16 @@ services:
   - type: web
     name: vibecoding
     env: node
+    # Pin to Node 22 LTS. If Render ever upgrades the default runtime,
+    # better-sqlite3 (a native .node binary) will crash with
+    # "compiled against a different Node.js version" until rebuild.sh
+    # is re-run. Pinning prevents that surprise entirely.
+    runtime: node
     buildCommand: chmod +x build.sh && bash build.sh
-    startCommand: npm start
+    startCommand: node server.ts
     envVars:
+      - key: NODE_VERSION
+        value: 22.22.2
       - key: NODE_ENV
         value: production
       # Generated once by Render and kept stable across deploys — never
