@@ -457,8 +457,7 @@ function App() {
          const [isDeploying, setIsDeploying] = useState(false);
 const [deployUrl, setDeployUrl] = useState('');
 const [showDeployModal, setShowDeployModal] = useState(false);
- const [showTemplateMarketplace, setShowTemplateMarketplace] = useState(false);        
-const [codebaseIndex, setCodebaseIndex] = useState<{
+ const [codebaseIndex, setCodebaseIndex] = useState<{
   symbols: { name: string; file: string; type: string; line: number }[];
   dependencies: string[];
   summary: string;
@@ -485,7 +484,7 @@ const [isIndexing, setIsIndexing] = useState(false);
   const [isFetchingRepos, setIsFetchingRepos] = useState(false);
   const [repoSearchQuery, setRepoSearchQuery] = useState('');
   const [previewContent, setPreviewContent] = useState('');
-  const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live' | 'command' | 'debugger' | 'database' | 'analytics' | 'review' | 'tests' | 'docs' | 'terminal' | 'assets' | 'npm'>('analytics');
+  const [activeTab, setActiveTab] = useState<'editor' | 'ai' | 'chat' | 'live' | 'command' | 'debugger' | 'database' | 'analytics' | 'review' | 'docs' | 'terminal' | 'npm'>('analytics');
   const [aiPrompt, setAiPrompt] = useState('');
   const [useThinking, setUseThinking] = useState(false);
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model', parts: { text: string }[] }[]>([]);
@@ -827,14 +826,6 @@ const saveProjectToFirestore = async () => {
   const [sqlError, setSqlError] = useState<string | null>(null);
   
   // Assets State
-  const [assets, setAssets] = useState<{ id: string, name: string, url: string, type: string }[]>([
-    { id: '1', name: 'Nexus Logo', url: 'https://picsum.photos/seed/nexus-logo/400/400', type: 'image' },
-    { id: '2', name: 'Cyber Background', url: 'https://picsum.photos/seed/cyber-bg/1920/1080', type: 'image' },
-    { id: '3', name: 'Abstract Tech', url: 'https://picsum.photos/seed/tech-abstract/800/600', type: 'image' },
-    { id: '4', name: 'Neural Network', url: 'https://picsum.photos/seed/neural/1000/1000', type: 'image' }
-  ]);
-  const [isAddingAsset, setIsAddingAsset] = useState(false);
-  const [newAsset, setNewAsset] = useState({ name: '', url: '' });
 
   // NPM State
   const [npmQuery, setNpmQuery] = useState('');
@@ -867,8 +858,6 @@ const saveProjectToFirestore = async () => {
 
   // AI Review/Tests/Docs State
   const [reviewResult, setReviewResult] = useState<string>('');
-  const [testResults, setTestResults] = useState<{ name: string, status: 'pass' | 'fail' | 'pending', error?: string }[]>([]);
-  const [testRunMeta, setTestRunMeta] = useState<{ elapsedSeconds: number; raw: string } | null>(null);
   const [docsContent, setDocsContent] = useState<string>('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
          const [collaborators, setCollaborators] = useState<{
@@ -987,486 +976,6 @@ useEffect(() => {
   }, 5000);
   return () => clearTimeout(timer);
 }, [files.length, userApiKey]);
-
-// ✅ Template data
-const templates = [
-  {
-    id: 'react-todo',
-    name: 'React Todo App',
-    description: 'Full todo app with hooks, local storage and animations',
-    category: 'Frontend',
-    tags: ['React', 'TypeScript', 'Tailwind'],
-    icon: '⚛️',
-    files: [
-      {
-        name: 'index.html',
-        language: 'html',
-        code: `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>✅ Todo App</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-900 min-h-screen flex items-center justify-center p-4">
-  <div id="root"></div>
-  <script>
-let todos = JSON.parse(localStorage.getItem('nexus-todos') || '[]');
-
-function render() {
-  var root = document.getElementById('root');
-  var html = '<div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">';
-  html += '<h1 class="text-2xl font-bold text-white mb-6">Todo App</h1>';
-  html += '<div class="flex gap-2 mb-4">';
-  html += '<input id="todo-input" type="text" placeholder="Add a todo..." ';
-  html += 'class="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm outline-none border border-gray-600" ';
-  html += 'onkeydown="if(event.key===\'Enter\')addTodo()"/>';
-  html += '<button onclick="addTodo()" class="bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold">Add</button>';
-  html += '</div><ul class="space-y-2">';
-  html += todos.map(function(t, i) {
-    return '<li class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg group">'
-      + '<input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="toggle(' + i + ')" class="w-4 h-4 accent-emerald-500"/>'
-      + '<span class="' + (t.done ? 'line-through opacity-40' : '') + ' flex-1 text-white text-sm">' + t.text + '</span>'
-      + '<button onclick="remove(' + i + ')" class="text-red-400 text-xs font-bold">x</button>'
-      + '</li>';
-  }).join('');
-  html += '</ul>';
-  html += '<p class="text-gray-500 text-xs mt-4 text-center">';
-  html += todos.filter(function(t){ return t.done; }).length + '/' + todos.length + ' completed';
-  html += '</p></div>';
-  root.innerHTML = html;
-}
-
-function addTodo() {
-  const input = document.getElementById('todo-input');
-  if (!input.value.trim()) return;
-  todos.push({ text: input.value.trim(), done: false });
-  save(); input.value = '';
-}
-function toggle(i) { todos[i].done = !todos[i].done; save(); }
-function remove(i) { todos.splice(i, 1); save(); }
-function save() { localStorage.setItem('nexus-todos', JSON.stringify(todos)); render(); }
-
-render();
-  </script>
-</body>
-</html>`
-      },
-      {
-        name: 'app.js',
-        language: 'javascript',
-        code: `let todos = JSON.parse(localStorage.getItem('todos') || '[]');
-
-
-  const root = document.getElementById('root');
-  root.innerHTML = \`
-    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-96">
-      <h1 class="text-2xl font-bold text-white mb-6">✅ Todo App</h1>
-      <div class="flex gap-2 mb-4">
-        <input id="input" type="text" placeholder="Add a todo..."
-          class="flex-1 bg-gray-700 text-white rounded-lg px-3 py-2 text-sm outline-none"
-          onkeydown="if(event.key==='Enter')addTodo()"/>
-        <button onclick="addTodo()"
-          class="bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-400">
-          Add
-        </button>
-      </div>
-      <ul class="space-y-2">
-        \${todos.map((t,i) => \`
-          <li class="flex items-center gap-3 p-3 bg-gray-700 rounded-lg group">
-            <input type="checkbox" \${t.done?'checked':''} onchange="toggle(\${i})"
-              class="w-4 h-4 accent-emerald-500"/>
-            <span class="\${t.done?'line-through opacity-40':''} flex-1 text-white text-sm">\${t.text}</span>
-            <button onclick="remove(\${i})"
-              class="opacity-0 group-hover:opacity-100 text-red-400 text-xs">✕</button>
-          </li>
-        \`).join('')}
-      </ul>
-      <p class="text-gray-500 text-xs mt-4 text-center">
-        \${todos.filter(t=>t.done).length}/\${todos.length} completed
-      </p>
-    </div>
-  \`;
-}
-
-function addTodo() {
-  const input = document.getElementById('input');
-  if (!input.value.trim()) return;
-  todos.push({ text: input.value.trim(), done: false });
-  save(); input.value = '';
-}
-function toggle(i) { todos[i].done = !todos[i].done; save(); }
-function remove(i) { todos.splice(i, 1); save(); }
-function save() { localStorage.setItem('todos', JSON.stringify(todos)); render(); }
-
-render();`
-      }
-    ]
-  },
-  {
-    id: 'python-api',
-    name: 'Python REST API',
-    description: 'Simple REST API with Flask and JSON responses',
-    category: 'Backend',
-    tags: ['Python', 'Flask', 'REST'],
-    icon: '🐍',
-    files: [
-      {
-        name: 'app.py',
-        language: 'python',
-        code: `from flask import Flask, jsonify, request
-
-app = Flask(__name__)
-
-# Sample data
-users = [
-    {"id": 1, "name": "Alice", "email": "alice@example.com"},
-    {"id": 2, "name": "Bob",   "email": "bob@example.com"},
-]
-
-@app.route('/')
-def home():
-    return jsonify({"message": "Welcome to Nexus API", "version": "1.0"})
-
-@app.route('/users', methods=['GET'])
-def get_users():
-    return jsonify({"users": users, "count": len(users)})
-
-@app.route('/users/<int:user_id>', methods=['GET'])
-def get_user(user_id):
-    user = next((u for u in users if u["id"] == user_id), None)
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-    return jsonify(user)
-
-@app.route('/users', methods=['POST'])
-def create_user():
-    data = request.get_json()
-    new_user = {
-        "id": len(users) + 1,
-        "name": data.get("name"),
-        "email": data.get("email")
-    }
-    users.append(new_user)
-    return jsonify(new_user), 201
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
-`
-      },
-      {
-        name: 'requirements.txt',
-        language: 'text',
-        code: `flask==3.0.0
-flask-cors==4.0.0`
-      }
-    ]
-  },
-  {
-    id: 'landing-page',
-    name: 'SaaS Landing Page',
-    description: 'Modern landing page with hero, features and CTA',
-    category: 'Frontend',
-    tags: ['HTML', 'CSS', 'JavaScript'],
-    icon: '🚀',
-    files: [
-      {
-        name: 'index.html',
-        language: 'html',
-        code: `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>SaaS Product</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-black text-white">
-  <!-- Nav -->
-  <nav class="flex items-center justify-between px-8 py-4 border-b border-white/10">
-    <span class="text-xl font-black tracking-tight">NEXUS</span>
-    <div class="flex gap-6 text-sm text-gray-400">
-      <a href="#" class="hover:text-white">Features</a>
-      <a href="#" class="hover:text-white">Pricing</a>
-      <a href="#" class="hover:text-white">Docs</a>
-    </div>
-    <button class="bg-emerald-500 text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-400">
-      Get Started
-    </button>
-  </nav>
-
-  <!-- Hero -->
-  <section class="text-center py-32 px-8 max-w-4xl mx-auto">
-    <div class="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-4 py-1 text-xs text-emerald-400 mb-6">
-      ✨ Now with AI-powered features
-    </div>
-    <h1 class="text-6xl font-black leading-none mb-6">
-      Build faster with <span class="text-emerald-400">AI</span>
-    </h1>
-    <p class="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
-      The all-in-one platform to build, deploy, and scale your applications with the power of artificial intelligence.
-    </p>
-    <div class="flex gap-4 justify-center">
-      <button class="bg-emerald-500 text-black px-8 py-3 rounded-xl font-bold hover:bg-emerald-400 transition">
-        Start for free →
-      </button>
-      <button class="border border-white/20 px-8 py-3 rounded-xl font-bold hover:bg-white/5 transition">
-        Watch demo
-      </button>
-    </div>
-  </section>
-
-  <!-- Features -->
-  <section class="grid grid-cols-1 md:grid-cols-3 gap-6 px-8 pb-24 max-w-5xl mx-auto">
-    ${['⚡ Lightning Fast', '🔒 Secure by Default', '🤖 AI Powered'].map(f => `
-    <div class="bg-white/5 border border-white/10 rounded-2xl p-6">
-      <h3 class="font-bold text-lg mb-2">${f}</h3>
-      <p class="text-gray-400 text-sm">Built for modern teams who need speed, reliability, and intelligence in one platform.</p>
-    </div>`).join('')}
-  </section>
-</body>
-</html>`
-      }
-    ]
-  },
-  {
-    id: 'data-structures',
-    name: 'Data Structures (Python)',
-    description: 'Common data structures: Stack, Queue, LinkedList, BST',
-    category: 'Algorithm',
-    tags: ['Python', 'DSA', 'Interview'],
-    icon: '🏗️',
-    files: [
-      {
-        name: 'data_structures.py',
-        language: 'python',
-        code: `# ── Stack ─────────────────────────────────────────────
-class Stack:
-    def __init__(self): self.items = []
-    def push(self, item): self.items.append(item)
-    def pop(self): return self.items.pop() if self.items else None
-    def peek(self): return self.items[-1] if self.items else None
-    def is_empty(self): return len(self.items) == 0
-    def size(self): return len(self.items)
-
-# ── Queue ─────────────────────────────────────────────
-from collections import deque
-class Queue:
-    def __init__(self): self.items = deque()
-    def enqueue(self, item): self.items.append(item)
-    def dequeue(self): return self.items.popleft() if self.items else None
-    def is_empty(self): return len(self.items) == 0
-
-# ── Linked List ───────────────────────────────────────
-class Node:
-    def __init__(self, data): self.data = data; self.next = None
-
-class LinkedList:
-    def __init__(self): self.head = None
-    def append(self, data):
-        new = Node(data)
-        if not self.head: self.head = new; return
-        cur = self.head
-        while cur.next: cur = cur.next
-        cur.next = new
-    def display(self):
-        result, cur = [], self.head
-        while cur: result.append(str(cur.data)); cur = cur.next
-        return ' -> '.join(result)
-
-# ── Binary Search Tree ────────────────────────────────
-class BST:
-    def __init__(self): self.root = None
-    def insert(self, val):
-        def _insert(node, val):
-            if not node: return Node(val)
-            if val < node.data: node.next = _insert(node.next, val)
-            return node
-        self.root = _insert(self.root, val)
-    def search(self, val):
-        cur = self.root
-        while cur:
-            if val == cur.data: return True
-            cur = cur.next if val < cur.data else None
-        return False
-
-# ── Test ──────────────────────────────────────────────
-if __name__ == '__main__':
-    s = Stack()
-    s.push(1); s.push(2); s.push(3)
-    print("Stack pop:", s.pop())
-
-    q = Queue()
-    q.enqueue('a'); q.enqueue('b')
-    print("Queue dequeue:", q.dequeue())
-
-    ll = LinkedList()
-    ll.append(1); ll.append(2); ll.append(3)
-    print("LinkedList:", ll.display())
-`
-      }
-    ]
-  },
-  {
-    id: 'express-api',
-    name: 'Express.js REST API',
-    description: 'Node.js REST API with Express, middleware and routes',
-    category: 'Backend',
-    tags: ['Node.js', 'Express', 'REST'],
-    icon: '🟢',
-    files: [
-      {
-        name: 'server.js',
-        language: 'javascript',
-        code: `// ✅ Express.js REST API
-// Run this with: node server.js
-// Then test with: http://localhost:3000
-
-const express = require('express');
-const app = express();
-const PORT = 3000;
-
-app.use(express.json());
-
-// In-memory store
-let items = [
-  { id: 1, name: 'Item 1', price: 9.99 },
-  { id: 2, name: 'Item 2', price: 19.99 },
-];
-
-// Logger middleware
-app.use((req, res, next) => {
-  console.log(\`[\${new Date().toISOString()}] \${req.method} \${req.path}\`);
-  next();
-});
-
-app.get('/', (req, res) => {
-  res.json({ message: 'Express API Running', endpoints: ['/items', '/items/:id'] });
-});
-
-app.get('/items', (req, res) => res.json(items));
-
-app.get('/items/:id', (req, res) => {
-  const item = items.find(i => i.id === parseInt(req.params.id));
-  item ? res.json(item) : res.status(404).json({ error: 'Not found' });
-});
-
-app.post('/items', (req, res) => {
-  const item = { id: items.length + 1, ...req.body };
-  items.push(item);
-  res.status(201).json(item);
-});
-
-app.delete('/items/:id', (req, res) => {
-  const idx = items.findIndex(i => i.id === parseInt(req.params.id));
-  if (idx === -1) return res.status(404).json({ error: 'Not found' });
-  items.splice(idx, 1);
-  res.json({ success: true });
-});
-
-app.listen(PORT, () => console.log(\`Server running at http://localhost:\${PORT}\`));
-`
-      }
-    ]
-  },
-  {
-    id: 'calculator',
-    name: 'Calculator App',
-    description: 'Fully functional calculator with keyboard support',
-    category: 'Frontend',
-    tags: ['HTML', 'CSS', 'JavaScript'],
-    icon: '🧮',
-    files: [
-      {
-        name: 'index.html',
-        language: 'html',
-        code: `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <title>Calculator</title>
-  <style>
-    body { background:#111; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; font-family:system-ui; }
-    .calc { background:#1a1a1a; border-radius:20px; padding:20px; width:280px; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
-    .display { background:#000; border-radius:12px; padding:16px; text-align:right; margin-bottom:16px; }
-    .expr { color:#666; font-size:12px; min-height:18px; }
-    .val { color:#fff; font-size:32px; font-weight:300; word-break:break-all; }
-    .buttons { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
-    button { padding:18px; border:none; border-radius:12px; font-size:16px; cursor:pointer; transition:all 0.1s; }
-    button:active { transform:scale(0.95); }
-    .btn-op  { background:#333; color:#f90; }
-    .btn-num { background:#222; color:#fff; }
-    .btn-eq  { background:#10b981; color:#000; font-weight:bold; }
-    .btn-clr { background:#333; color:#f55; }
-    .btn-zero{ grid-column:span 2; }
-  </style>
-</head>
-<body>
-<div class="calc">
-  <div class="display">
-    <div class="expr" id="expr"></div>
-    <div class="val" id="val">0</div>
-  </div>
-  <div class="buttons">
-    <button class="btn-clr" onclick="clear_()">AC</button>
-    <button class="btn-op"  onclick="sign()">+/-</button>
-    <button class="btn-op"  onclick="pct()">%</button>
-    <button class="btn-op"  onclick="op('/')">÷</button>
-    <button class="btn-num" onclick="num('7')">7</button>
-    <button class="btn-num" onclick="num('8')">8</button>
-    <button class="btn-num" onclick="num('9')">9</button>
-    <button class="btn-op"  onclick="op('*')">×</button>
-    <button class="btn-num" onclick="num('4')">4</button>
-    <button class="btn-num" onclick="num('5')">5</button>
-    <button class="btn-num" onclick="num('6')">6</button>
-    <button class="btn-op"  onclick="op('-')">−</button>
-    <button class="btn-num" onclick="num('1')">1</button>
-    <button class="btn-num" onclick="num('2')">2</button>
-    <button class="btn-num" onclick="num('3')">3</button>
-    <button class="btn-op"  onclick="op('+')">+</button>
-    <button class="btn-num btn-zero" onclick="num('0')">0</button>
-    <button class="btn-num" onclick="dot()">.</button>
-    <button class="btn-eq"  onclick="eq()">=</button>
-  </div>
-</div>
-<script>
-  let cur='0', prev='', operator='', fresh=true;
-  const V=()=>document.getElementById('val');
-  const E=()=>document.getElementById('expr');
-  function upd(){ V().textContent=cur; }
-  function num(n){ if(fresh){cur=n;fresh=false;}else cur=cur==='0'?n:cur+n; upd(); }
-  function dot(){ if(!cur.includes('.')) cur+='.'; fresh=false; upd(); }
-  function op(o){ prev=cur;operator=o;fresh=true; E().textContent=cur+' '+o; }
-  function eq(){ if(!operator)return; const r=eval(prev+operator+cur); cur=String(parseFloat(r.toFixed(10))); E().textContent=''; fresh=true; upd(); }
-  function clear_(){ cur='0';prev='';operator='';fresh=true; E().textContent=''; upd(); }
-  function sign(){ cur=String(-parseFloat(cur)); upd(); }
-  function pct(){ cur=String(parseFloat(cur)/100); upd(); }
-</script>
-</body>
-</html>`
-      }
-    ]
-  },
-];
-
-// ✅ Apply template function
-const applyTemplate = (template: typeof templates[0]) => {
-  const newFiles = template.files.map((f, i) => ({
-    id: i + 1,
-    name: f.name,
-    code: f.code,
-    language: f.language,
-    type: 'file' as const,
-    parentId: null,
-  }));
-  setFiles(newFiles);
-  setActiveFileId(1);
-  setShowTemplateMarketplace(false);
-  showToast(`Template "${template.name}" loaded! 🎉`, 'success');
-  confetti({ particleCount: 80, spread: 70 });
-  setTimeout(() => handleRun(), 500);
-};
          
   const searchNpm = async (query: string) => {
     if (!query) return;
@@ -1482,18 +991,6 @@ const applyTemplate = (template: typeof templates[0]) => {
     }
   };
 
-  const handleAddAsset = () => {
-    if (newAsset.name && newAsset.url) {
-      setAssets(prev => [...prev, { id: Date.now().toString(), name: newAsset.name, url: newAsset.url, type: 'image' }]);
-      setNewAsset({ name: '', url: '' });
-      setIsAddingAsset(false);
-      confetti({ particleCount: 30, spread: 50 });
-    }
-  };
-
-  const handleDeleteAsset = (id: string) => {
-    setAssets(prev => prev.filter(a => a.id !== id));
-  };
   const [smartSuggestions, setSmartSuggestions] = useState<{ title: string, description: string, type: string, impact: string, suggestedCode?: string }[]>([]);
 
   const [detectedDeps, setDetectedDeps] = useState<string[]>([]);
@@ -1527,42 +1024,6 @@ const applyTemplate = (template: typeof templates[0]) => {
     }, 1500);
   };
 
-  const generateFullStackProject = async () => {
-    setIsGenerating(true);
-    try {
-      const result = await generateProject(`
-        Create a full-stack application that connects to a real backend database.
-        The backend is already provided at the following endpoints:
-        - POST /api/user-db/my-project/tasks (to create a task)
-        - GET /api/user-db/my-project/tasks (to list tasks)
-        - DELETE /api/user-db/my-project/tasks/:id (to delete a task)
-        
-        Generate:
-        1. index.html: A clean UI with a task list and input field.
-        2. script.js: JavaScript that uses fetch() to interact with these endpoints.
-        3. styles.css: Modern styling for the task manager.
-      `, [], useThinking, userApiKey, selectedModel);
-      if (result && result.files) {
-        const newFiles = result.files.map((f: any, idx: number) => ({
-          id: Date.now() + idx,
-          name: f.name,
-          code: f.code,
-          language: f.language,
-          type: "file",
-          parentId: null
-        }));
-        setFiles(newFiles);
-        setActiveFileId(newFiles[0].id);
-        showToast("Full-stack project generated!", "success");
-        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-      }
-    } catch (err) {
-      console.error('Generate project error:', err);
-      showToast("Failed to generate project", "error");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
 
   const fetchSmartSuggestions = async () => {
     if (!activeFile) return;
@@ -2084,7 +1545,7 @@ ${activeFile.code}`;
         setActiveTab('review');
         setAiResponse('Opening Project Review & Security Audit...');
       } else if (command.intent === 'test') {
-        setActiveTab('tests');
+        
         setAiResponse('Opening Automated Unit Testing...');
       } else if (command.intent === 'dictate') {
         const editor = editorRefs.current[activeFileId];
@@ -4029,105 +3490,6 @@ const handleExecuteCode = async () => {
     }
   };
 
-  const generateTests = async () => {
-    const activeFile = files.find(f => f.id === activeFileId);
-    if (!activeFile) return;
-
-    const detectedLanguage = getLanguageFromFilename(activeFile.name);
-    // Same execution backend as Run (sandboxed Piston for python/javascript,
-    // JDoodle for the rest — see server.ts /api/execute). Tests can only be
-    // genuinely run for languages that backend supports.
-    const executableLanguages = ['python', 'javascript', 'typescript', 'java', 'cpp', 'c', 'go', 'ruby', 'php', 'bash', 'rust', 'swift', 'kotlin', 'csharp', 'r'];
-    if (!executableLanguages.includes(detectedLanguage)) {
-      showToast(`${activeFile.name}: language not supported for test execution.`, 'error');
-      return;
-    }
-
-    setIsAnalyzing(true);
-    setActiveTab('tests');
-    setTestResults([{ name: 'Generating tests...', status: 'pending' }]);
-
-    try {
-      // Ask for plain, dependency-free code rather than a Vitest/Jest/pytest
-      // suite: the sandbox just runs a file and returns stdout — there's no
-      // test framework installed in it to make `describe`/`it`/`expect`
-      // work. Each test prints one line of JSON; that's the only contract
-      // we rely on to tell whether something actually passed or failed.
-      const prompt = `Write standalone, dependency-free ${detectedLanguage} test code for the program below.
-
-Rules:
-- Do NOT use any test framework (no Vitest, Jest, pytest, JUnit, etc.) and do NOT import or require one — it will not be available when this runs.
-- Include the original code directly in your output (or faithfully reimplement the function(s) under test) so the file is complete and runnable entirely on its own, using only the language's standard library.
-- Write 3 to 6 test cases: cover normal behavior plus at least one edge case.
-- Wrap each individual test in error handling so one failing test does not stop the others from running.
-- For EVERY test, print exactly one line of compact JSON and nothing else on that line, in this exact shape:
-  {"__test__":true,"name":"<short test name>","status":"pass"}
-  or on failure:
-  {"__test__":true,"name":"<short test name>","status":"fail","error":"<short reason>"}
-- Do not print any other banners, labels, or logging to stdout — only those JSON lines (plus whatever the code under test itself prints, which is fine).
-- Output ONLY the complete runnable code. No markdown formatting, no code fences, no explanation before or after.
-
-Code to test:
-${activeFile.code}`;
-
-      const testCode = await chatWithAI(prompt, [], userApiKey, undefined, selectedModel);
-      // Strip markdown code fences in case the model adds them despite instructions.
-      const cleanedCode = testCode.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '').trim();
-
-      setTestResults([{ name: 'Running tests in sandbox...', status: 'pending' }]);
-
-      const startedAt = Date.now();
-      const response = await fetch('/api/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: cleanedCode, language: detectedLanguage })
-      });
-      const result = await response.json();
-      const elapsedSeconds = (Date.now() - startedAt) / 1000;
-
-      // Parse only well-formed {"__test__":true,...} lines out of stdout —
-      // anything else on stdout (e.g. a stray console.log inside the code
-      // under test) is silently ignored rather than misread as a result.
-      const parsed: { name: string; status: 'pass' | 'fail'; error?: string }[] = [];
-      for (const line of String(result.output || '').split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const obj = JSON.parse(trimmed);
-          if (obj && obj.__test__ === true && typeof obj.name === 'string') {
-            parsed.push({
-              name: obj.name,
-              status: obj.status === 'pass' ? 'pass' : 'fail',
-              error: typeof obj.error === 'string' ? obj.error : undefined,
-            });
-          }
-        } catch {
-          // not a result line — ignore
-        }
-      }
-
-      if (parsed.length === 0) {
-        // Be explicit when nothing could actually be run, rather than
-        // showing stale or fabricated results — e.g. a syntax error in the
-        // generated code, or a sandbox/network failure.
-        setTestResults([{
-          name: 'Test suite failed to run',
-          status: 'fail',
-          error: result.error || 'The generated test code produced no parseable test results. Try again, or check the raw output below.',
-        }]);
-        setTestRunMeta({ elapsedSeconds, raw: result.output || result.error || '' });
-        return;
-      }
-
-      setTestResults(parsed);
-      setTestRunMeta({ elapsedSeconds, raw: result.output || '' });
-    } catch (err: any) {
-      console.error(err);
-      setTestResults([{ name: 'Test suite failed to run', status: 'fail', error: err.message || String(err) }]);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
 
   const generateDocs = async () => {
     setIsAnalyzing(true);
@@ -5589,14 +4951,6 @@ ${activeFile.code}`;
               {debuggerStatus === 'running' ? <Bug className="w-3.5 h-3.5 animate-pulse" /> : <Bug className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">{debuggerStatus === 'running' ? 'Pause' : 'Debug'}</span>
             </button>
-            <button 
-              onClick={generateFullStackProject}
-              disabled={isGenerating}
-              className="flex items-center gap-2 px-3 md:px-4 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 transition-colors disabled:opacity-50"
-            >
-              {isGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Layers className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">Full Stack Template</span>
-            </button>
             {/* Add this BEFORE the Run Project button */}
 <button 
   onClick={handleExecuteCode}
@@ -5613,14 +4967,6 @@ ${activeFile.code}`;
   <span className="hidden sm:inline">Execute</span>
 </button>
 
-<button
-  onClick={() => setShowTemplateMarketplace(true)}
-  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-white hover:bg-white/20 transition-all"
-  title="Template Marketplace"
->
-  <Layers className="w-3.5 h-3.5" />
-  <span className="hidden sm:inline">Templates</span>
-</button>
 {/* Upload File */}
 <button
   onClick={handleUploadFile}
@@ -5869,13 +5215,6 @@ ${activeFile.code}`;
                 <Plus className="w-4 h-4" />
                 New File
               </button>
-              <button 
-                onClick={generateFullStackProject}
-                className="px-6 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10 transition-all flex items-center gap-2"
-              >
-                <Layers className="w-4 h-4" />
-                Full Stack Template
-              </button>
             </div>
           </div>
         )}
@@ -5884,7 +5223,7 @@ ${activeFile.code}`;
         <footer className="h-64 md:h-96 border-t border-border-custom flex flex-col bg-bg-secondary shrink-0">
           <div className="flex border-b border-border-custom overflow-x-auto custom-scrollbar shrink-0 items-center justify-between pr-4">
             <div className="flex">
-              {['ai', 'chat', 'live', 'editor', 'debugger', 'database', 'analytics', 'review', 'tests', 'docs', 'assets', 'npm', 'command'].map((tab) => (
+              {['ai', 'chat', 'live', 'editor', 'debugger', 'database', 'analytics', 'review', 'docs', 'npm', 'command'].map((tab) => (
                 <button 
                   key={tab}
                   onClick={() => setActiveTab(tab as any)}
@@ -6899,78 +6238,6 @@ ${activeFile.code}`;
                   </motion.div>
                 )}
 
-                {activeTab === 'tests' && (
-                  <motion.div
-                    key="tests-content"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex-1 flex flex-col gap-4 overflow-hidden"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <TestTube2 className="w-4 h-4 text-accent" />
-                        <h3 className="text-sm font-bold uppercase tracking-widest">Automated Unit Testing</h3>
-                      </div>
-                      <button 
-                        onClick={generateTests}
-                        disabled={isAnalyzing}
-                        className="px-4 py-2 bg-accent text-accent-foreground rounded-xl text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {isAnalyzing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-                        Generate & Run Tests
-                      </button>
-                    </div>
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-hidden">
-                      <div className="bg-black/20 rounded-2xl border border-white/5 p-6 custom-scrollbar">
-                        <h4 className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">Test Suite</h4>
-                        <div className="space-y-3">
-                          {testResults.map((test, i) => (
-                            <div key={i} className="bg-white/5 p-4 rounded-xl border border-white/5 flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                {test.status === 'pass' && <Check className="w-4 h-4 text-green-400" />}
-                                {test.status === 'fail' && <X className="w-4 h-4 text-red-400" />}
-                                {test.status === 'pending' && <Loader2 className="w-4 h-4 text-accent animate-spin" />}
-                                <span className="text-xs">{test.name}</span>
-                              </div>
-                              <span className={cn(
-                                "text-[9px] font-bold uppercase px-2 py-0.5 rounded",
-                                test.status === 'pass' ? "bg-green-400/10 text-green-400" : 
-                                test.status === 'fail' ? "bg-red-400/10 text-red-400" : "bg-accent/10 text-accent"
-                              )}>
-                                {test.status}
-                              </span>
-                            </div>
-                          ))}
-                          {testResults.length === 0 && (
-                            <div className="h-full flex items-center justify-center text-[11px] opacity-30 italic">
-                              No tests run yet
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="bg-black/20 rounded-2xl border border-white/5 p-6 custom-scrollbar">
-                        <h4 className="text-[10px] font-bold uppercase tracking-widest opacity-50 mb-4">Test Output</h4>
-                        <div className="font-mono text-[11px] space-y-2">
-                          {testResults.some(t => t.status === 'fail') && (
-                            <div className="text-red-400 bg-red-400/10 p-4 rounded-xl border border-red-400/20">
-                              {testResults.find(t => t.status === 'fail')?.error}
-                            </div>
-                          )}
-                          <div className="opacity-50">
-                            {testResults.length > 0 ? (
-                              <pre>
-                                {`Sandboxed Test Run\n\n`}
-                                {testResults.map(t => `${t.status === 'pass' ? '✓' : t.status === 'fail' ? '✗' : '…'} ${t.name}`).join('\n')}
-                                {testRunMeta ? `\n\nTests       ${testResults.filter(t => t.status === 'pass').length} passed | ${testResults.filter(t => t.status === 'fail').length} failed\nTime        ${testRunMeta.elapsedSeconds.toFixed(2)}s (real sandbox execution)` : ''}
-                                {testRunMeta?.raw ? `\n\nRaw output:\n${testRunMeta.raw}` : ''}
-                              </pre>
-                            ) : "Waiting for tests..."}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
 
                 {activeTab === 'docs' && (
                   <motion.div
@@ -7006,106 +6273,6 @@ ${activeFile.code}`;
                   </motion.div>
                 )}
 
-                {activeTab === 'assets' && (
-                  <motion.div
-                    key="assets-content"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="h-full flex flex-col gap-4 overflow-hidden"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex items-center gap-2">
-                        <Palette className="w-4 h-4 text-accent" />
-                        <h3 className="text-sm font-bold uppercase tracking-widest">Asset Manager</h3>
-                      </div>
-                      <button 
-                        onClick={() => setIsAddingAsset(!isAddingAsset)}
-                        className={cn(
-                          "px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2",
-                          isAddingAsset ? "bg-red-500/20 text-red-400 border border-red-500/30" : "bg-accent text-accent-foreground shadow-lg shadow-accent/20"
-                        )}
-                      >
-                        {isAddingAsset ? <X className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                        {isAddingAsset ? "Cancel" : "Add Asset"}
-                      </button>
-                    </div>
-
-                    {isAddingAsset && (
-                      <motion.div 
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4"
-                      >
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] uppercase tracking-widest opacity-40">Asset Name</label>
-                            <input 
-                              value={newAsset.name}
-                              onChange={(e) => setNewAsset(prev => ({ ...prev, name: e.target.value }))}
-                              placeholder="e.g. Hero Image"
-                              className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-accent"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] uppercase tracking-widest opacity-40">Asset URL</label>
-                            <input 
-                              value={newAsset.url}
-                              onChange={(e) => setNewAsset(prev => ({ ...prev, url: e.target.value }))}
-                              placeholder="https://..."
-                              className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-accent"
-                            />
-                          </div>
-                        </div>
-                        <button 
-                          onClick={handleAddAsset}
-                          disabled={!newAsset.name || !newAsset.url}
-                          className="w-full py-2 bg-accent text-accent-foreground rounded-lg text-xs font-bold uppercase tracking-widest disabled:opacity-30"
-                        >
-                          Confirm Add Asset
-                        </button>
-                      </motion.div>
-                    )}
-
-                    <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 custom-scrollbar p-1">
-                      {assets.map((asset) => (
-                        <div key={asset.id} className="group relative bg-white/5 border border-white/10 rounded-xl overflow-hidden hover:border-accent/50 transition-all aspect-square">
-                          <img src={asset.url} alt={asset.name} className="w-full h-full object-cover opacity-60 group-hover:opacity-100 transition-opacity" referrerPolicy="no-referrer" />
-                          
-                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => handleDeleteAsset(asset.id)}
-                              className="p-1.5 bg-red-500/80 text-white rounded-lg hover:bg-red-500 transition-colors"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-
-                          <div className="absolute inset-x-0 bottom-0 p-2 bg-black/80 backdrop-blur-md translate-y-full group-hover:translate-y-0 transition-transform">
-                            <p className="text-[9px] font-bold text-white truncate mb-2">{asset.name}</p>
-                            <div className="flex gap-1">
-                              <button 
-                                onClick={() => {
-                                  navigator.clipboard.writeText(`<img src="${asset.url}" alt="${asset.name}" referrerPolicy="no-referrer" />`);
-                                }}
-                                className="flex-1 py-1 bg-accent text-accent-foreground rounded text-[8px] font-bold uppercase hover:opacity-90 transition-all active:scale-95"
-                              >
-                                Tag
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  navigator.clipboard.writeText(asset.url);
-                                }}
-                                className="flex-1 py-1 bg-white/10 text-white rounded text-[8px] font-bold uppercase hover:bg-white/20 transition-all active:scale-95"
-                              >
-                                URL
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
 
                 {activeTab === 'npm' && (
                   <motion.div
@@ -7402,99 +6569,6 @@ ${activeFile.code}`;
           </motion.div>
         )}
       </AnimatePresence>
-          {/* Template Marketplace Modal */}
-{showTemplateMarketplace && (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-    onClick={() => setShowTemplateMarketplace(false)}
-  >
-    <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      className="bg-[#0d0d0e] border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col"
-      onClick={e => e.stopPropagation()}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-accent rounded-lg flex items-center justify-center">
-            <Layers className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <h2 className="font-black text-white uppercase tracking-tight">Template Marketplace</h2>
-            <p className="text-[10px] text-text-secondary opacity-50">
-              {templates.length} templates · Click to load instantly
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowTemplateMarketplace(false)}
-          className="p-2 hover:bg-white/5 rounded-lg transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Category filter */}
-      <div className="flex gap-2 px-6 py-3 border-b border-white/5 overflow-x-auto">
-        {['All', 'Frontend', 'Backend', 'Algorithm'].map(cat => (
-          <button
-            key={cat}
-            className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/5 hover:bg-accent/20 hover:text-accent border border-white/10 whitespace-nowrap transition-all"
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Templates grid */}
-      <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {templates.map((template) => (
-            <motion.div
-              key={template.id}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="bg-white/5 border border-white/10 rounded-2xl p-5 cursor-pointer hover:border-accent/50 hover:bg-accent/5 transition-all group"
-              onClick={() => applyTemplate(template)}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="text-3xl">{template.icon}</div>
-                <span className="text-[9px] font-bold uppercase tracking-wider bg-white/10 px-2 py-1 rounded-full text-text-secondary">
-                  {template.category}
-                </span>
-              </div>
-              <h3 className="font-bold text-white text-sm mb-1 group-hover:text-accent transition-colors">
-                {template.name}
-              </h3>
-              <p className="text-[11px] text-text-secondary opacity-60 mb-3 leading-relaxed">
-                {template.description}
-              </p>
-              <div className="flex flex-wrap gap-1 mb-4">
-                {template.tags.map(tag => (
-                  <span key={tag} className="text-[9px] bg-accent/10 text-accent px-2 py-0.5 rounded-full font-bold">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-text-secondary opacity-40">
-                  {template.files.length} file{template.files.length > 1 ? 's' : ''}
-                </span>
-                <button className="text-[10px] font-bold text-accent opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  Use Template <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </motion.div>
-  </motion.div>
-)}   
              {/* Deploy Modal */}
       <AnimatePresence>
         {showDeployModal && (
