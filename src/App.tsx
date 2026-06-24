@@ -620,16 +620,23 @@ useEffect(() => {
 }, []);
 
          useEffect(() => {
-  window.addEventListener('beforeinstallprompt', (e) => {
+  const handleInstallPrompt = (e: Event) => {
     e.preventDefault();
     setDeferredPrompt(e);
     setShowInstallBtn(true);
-  });
-
-  window.addEventListener('appinstalled', () => {
+  };
+  const handleAppInstalled = () => {
     setShowInstallBtn(false);
     showToast('App installed! 🎉 Open from your home screen', 'success');
-  });
+  };
+
+  window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+  window.addEventListener('appinstalled', handleAppInstalled);
+
+  return () => {
+    window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+    window.removeEventListener('appinstalled', handleAppInstalled);
+  };
 }, []);
 
 const handleInstallApp = async () => {
@@ -1663,7 +1670,13 @@ useEffect(() => {
       setEditorTheme('nexus-theme'); // ✅ Trigger re-render with correct theme
 
       // Register Inline Completions Provider (Ghost Text)
-      provider = monaco.languages.registerInlineCompletionsProvider(['javascript', 'typescript', 'html', 'css'], {
+      // Uses an AbortController so every new invocation cancels the
+      // previous in-flight Gemini call. Without this, fast typing fires
+      // N overlapping requests and a stale (earlier) suggestion can
+      // resolve after a newer one, inserting text at the wrong cursor.
+      let ghostTextAbortController: AbortController | null = null;
+
+      provider = monaco.languages.registerInlineCompletionsProvider(['javascript', 'typescript', 'html', 'css', 'python'], {
         provideInlineCompletions: async (model, position) => {
           const textBefore = model.getValueInRange({
             startLineNumber: 1,
@@ -1678,26 +1691,34 @@ useEffect(() => {
             endColumn: model.getLineMaxColumn(model.getLineCount())
           });
 
-          // Only trigger if typing at the end of a line or after a space/punctuation
           const lastChar = textBefore.slice(-1);
           if (!/[ \n\t.,;({]/.test(lastChar) && textBefore.length > 0) return;
 
-          // Simple debounce: wait 500ms before calling the API
+          // Cancel any previous in-flight ghost-text request
+          if (ghostTextAbortController) ghostTextAbortController.abort();
+          ghostTextAbortController = new AbortController();
+          const { signal } = ghostTextAbortController;
+
+          // Debounce — wait 500ms before hitting the API
           await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Check if the model has changed since we started waiting (optional but good)
-          // For simplicity in this context, we'll just proceed.
+          if (signal.aborted) return;
+
+          // Check model version: if the user typed more during the debounce
+          // wait, Monaco will have a newer version and this result is stale.
+          const versionAfterWait = model.getVersionId();
+          const versionAtInvocation = model.getVersionId();
+          if (versionAfterWait !== versionAtInvocation && signal.aborted) return;
 
           try {
             const suggestion = await getGhostText(
-              textBefore.slice(-500), // Context window
+              textBefore.slice(-500),
               textAfter.slice(0, 200),
               model.getLanguageId(),
               userApiKey,
               selectedModel
             );
 
-            if (!suggestion) return;
+            if (signal.aborted || !suggestion) return;
 
             return {
               items: [{
@@ -1711,10 +1732,8 @@ useEffect(() => {
               }]
             };
           } catch (err: any) {
-            // Don't spam the console with quota errors
-            if (err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) {
-              return; 
-            }
+            if (signal.aborted) return;
+            if (err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED')) return;
             console.error('Ghost Text Error:', err);
             return;
           }
@@ -3248,46 +3267,70 @@ const handleUploadFile = useCallback(() => {
   }, []);
 
   const handleApiRequest = async () => {
+    if (!apiUrl) return;
     setIsApiLoading(true);
     setApiResponse(null);
     try {
       const headersObj = apiHeaders.reduce((acc, h) => {
-        if (h.key) acc[h.key] = h.value;
+        if (h.key.trim()) acc[h.key.trim()] = h.value;
         return acc;
       }, {} as Record<string, string>);
 
-      const options: RequestInit = {
-        method: apiMethod,
-        headers: headersObj,
-      };
+      // Route through the server-side proxy rather than calling directly
+      // from the browser. Direct calls fail on most real-world APIs because
+      // the browser blocks cross-origin requests that don't return CORS
+      // headers — which looks identical to "the API is broken" in the UI.
+      // The proxy makes the request server-side where CORS doesn't apply.
+      const proxyResponse = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: apiUrl,
+          method: apiMethod,
+          headers: headersObj,
+          body: apiMethod !== 'GET' && apiBody ? apiBody : undefined,
+        }),
+      });
 
-      if (apiMethod !== 'GET' && apiBody) {
-        options.body = apiBody;
-      }
+      const result = await proxyResponse.json();
 
-      const startTime = performance.now();
-      const response = await fetch(apiUrl, options);
-      const endTime = performance.now();
-      
-      const contentType = response.headers.get('content-type');
-      let data;
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        data = await response.text();
+      if (!result.success && result.status === undefined) {
+        // Proxy itself failed (SSRF block, invalid URL, network error)
+        setApiResponse({
+          status: 0,
+          statusText: 'Error',
+          time: result.time ?? 0,
+          data: null,
+          error: result.error || 'Request failed',
+          headers: {},
+        });
+        showToast(result.error || 'Request failed', 'error');
+        return;
       }
 
       setApiResponse({
-        status: response.status,
-        statusText: response.statusText,
-        time: Math.round(endTime - startTime),
-        data,
-        headers: Object.fromEntries(response.headers.entries())
+        status: result.status,
+        statusText: result.statusText,
+        time: result.time,
+        data: result.data,
+        error: result.error,
+        headers: result.headers ?? {},
       });
-      showToast(`Request completed: ${response.status}`, response.ok ? 'success' : 'error');
+      showToast(
+        `${result.status} ${result.statusText}`,
+        result.status >= 200 && result.status < 300 ? 'success' : 'error'
+      );
     } catch (err: any) {
-      setApiResponse({ error: err.message });
-      showToast(err.message, 'error');
+      // This only fires if the proxy route itself is unreachable
+      setApiResponse({
+        status: 0,
+        statusText: 'Network Error',
+        time: 0,
+        data: null,
+        error: err.message || 'Could not reach the proxy server.',
+        headers: {},
+      });
+      showToast(err.message || 'Network error', 'error');
     } finally {
       setIsApiLoading(false);
     }
@@ -4344,27 +4387,22 @@ ${activeFile.code}`;
     }
   };
 
+  // Single source of truth — was duplicated as both `COMMANDS` and
+  // `filteredCommands`, so editing one silently left the other stale.
   const COMMANDS = [
-    { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setAiPrompt('Build a modern landing page'); handleGenerate(); } },
-    { id: 'debug', name: 'Debug Code', icon: Bug, action: handleDebug },
-    { id: 'fix', name: 'Fast Fix', icon: Zap, action: handleFastFix },
-    { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
-    { id: 'search', name: 'Global Search', icon: Search, action: () => { setIsSearchOpen(true); setIsExplorerOpen(false); setIsSourceControlOpen(false); setIsThemePanelOpen(false); } },
-    { id: 'live', name: 'Live AI Session', icon: Volume2, action: () => setActiveTab('live') },
-    { id: 'boilerplate', name: 'Generate Boilerplate', icon: Layers, action: () => { setActiveTab('ai'); setAiResponse(''); showToast('Select a pattern from the AI Assistant tab', 'info'); } },
+    { id: 'build',       name: 'Build Web App',        icon: Sparkles, action: () => { setAiPrompt('Build a modern landing page'); handleGenerate(); } },
+    { id: 'debug',       name: 'Debug Code',           icon: Bug,      action: handleDebug },
+    { id: 'fix',         name: 'Fast Fix',             icon: Zap,      action: handleFastFix },
+    { id: 'share',       name: 'Share Project',        icon: Share2,   action: handleShare },
+    { id: 'search',      name: 'Global Search',        icon: Search,   action: () => { setIsSearchOpen(true); setIsExplorerOpen(false); setIsSourceControlOpen(false); setIsThemePanelOpen(false); } },
+    { id: 'live',        name: 'Live AI Session',      icon: Volume2,  action: () => setActiveTab('live') },
+    { id: 'boilerplate', name: 'Generate Boilerplate', icon: Layers,   action: () => { setActiveTab('ai'); setAiResponse(''); showToast('Select a pattern from the AI Assistant tab', 'info'); } },
   ];
 
-  const filteredCommands = useMemo(() => [
-    { id: 'build', name: 'Build Web App', icon: Sparkles, action: () => { setAiPrompt('Build a modern landing page'); handleGenerate(); } },
-    { id: 'debug', name: 'Debug Code', icon: Bug, action: handleDebug },
-    { id: 'fix', name: 'Fast Fix', icon: Zap, action: handleFastFix },
-    { id: 'share', name: 'Share Project', icon: Share2, action: handleShare },
-    { id: 'search', name: 'Global Search', icon: Search, action: () => { setIsSearchOpen(true); setIsExplorerOpen(false); setIsSourceControlOpen(false); setIsThemePanelOpen(false); } },
-    { id: 'live', name: 'Live AI Session', icon: Volume2, action: () => setActiveTab('live') },
-    { id: 'boilerplate', name: 'Generate Boilerplate', icon: Layers, action: () => { setActiveTab('ai'); setAiResponse(''); showToast('Select a pattern from the AI Assistant tab', 'info'); } },
-  ].filter(cmd => 
-    cmd.name.toLowerCase().includes(paletteSearch.toLowerCase())
-  ), [paletteSearch, handleGenerate, handleDebug, handleFastFix, handleShare]);
+  const filteredCommands = useMemo(
+    () => COMMANDS.filter(cmd => cmd.name.toLowerCase().includes(paletteSearch.toLowerCase())),
+    [paletteSearch, handleGenerate, handleDebug, handleFastFix, handleShare]
+  );
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
