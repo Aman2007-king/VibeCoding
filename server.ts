@@ -647,10 +647,18 @@ app.use((req, res, next) => {
     const userId = (req.session as any).user.id;
     try {
       const keys = db.prepare("SELECT key_name, key_value FROM user_keys WHERE user_id = ?").all(userId);
-      const decryptedKeys = keys.map((k: any) => ({
-        key_name: k.key_name,
-        key_value: decrypt(k.key_value)
-      }));
+      // Per-row try/catch: a key encrypted under a previous ENCRYPTION_KEY
+      // (e.g. after a secret rotation or accidental env-var reset) would
+      // have caused the whole request to 400, hiding all other valid keys.
+      // Now we return successfully-decrypted keys and mark broken ones so
+      // the user knows to re-enter them rather than seeing a blank list.
+      const decryptedKeys = keys.map((k: any) => {
+        try {
+          return { key_name: k.key_name, key_value: decrypt(k.key_value) };
+        } catch {
+          return { key_name: k.key_name, key_value: null, error: "Could not decrypt — please re-enter this key." };
+        }
+      });
       res.json({ success: true, keys: decryptedKeys });
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
@@ -870,6 +878,84 @@ app.use((req, res, next) => {
 
     } catch (err: any) {
       res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── API Playground Proxy ──────────────────────────────────────────────────
+  // The browser can't call most third-party APIs directly because of CORS
+  // — the browser blocks requests to origins that don't return the right
+  // Access-Control-Allow-Origin headers. That used to make the playground
+  // look broken ("Status: undefined") for any real API. Routing through
+  // this server-side proxy removes CORS entirely — the server makes the
+  // HTTP request and streams the result back, same as any API client.
+  app.post("/api/proxy", async (req, res) => {
+    const { url, method = "GET", headers: reqHeaders = {}, body: reqBody } = req.body;
+
+    if (!url || typeof url !== "string") {
+      return res.status(400).json({ success: false, error: "A 'url' string is required" });
+    }
+
+    // Block requests targeting this server itself or private/loopback IPs
+    // to prevent Server-Side Request Forgery (SSRF) — without this, a
+    // user could point the proxy at http://localhost/api/admin or an
+    // internal Render metadata endpoint.
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.toLowerCase();
+      const isPrivate =
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "::1" ||
+        host.endsWith(".local") ||
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+        /^169\.254\./.test(host) ||
+        host === "0.0.0.0";
+      if (isPrivate) {
+        return res.status(403).json({ success: false, error: "Requests to private/local addresses are not allowed." });
+      }
+    } catch {
+      return res.status(400).json({ success: false, error: "Invalid URL" });
+    }
+
+    const startTime = Date.now();
+    try {
+      const fetchOptions: RequestInit = {
+        method: String(method).toUpperCase(),
+        headers: typeof reqHeaders === "object" ? (reqHeaders as Record<string, string>) : {},
+      };
+      if (method !== "GET" && method !== "HEAD" && reqBody) {
+        fetchOptions.body = typeof reqBody === "string" ? reqBody : JSON.stringify(reqBody);
+      }
+
+      const upstream = await fetch(url, fetchOptions);
+      const elapsed = Date.now() - startTime;
+
+      const contentType = upstream.headers.get("content-type") || "";
+      const responseBody = contentType.includes("application/json")
+        ? await upstream.json().catch(() => upstream.text())
+        : await upstream.text();
+
+      const responseHeaders: Record<string, string> = {};
+      upstream.headers.forEach((value, key) => { responseHeaders[key] = value; });
+
+      res.json({
+        success: true,
+        status: upstream.status,
+        statusText: upstream.statusText,
+        time: elapsed,
+        data: responseBody,
+        headers: responseHeaders,
+      });
+    } catch (err: any) {
+      res.status(502).json({
+        success: false,
+        status: 0,
+        statusText: "Network Error",
+        time: Date.now() - startTime,
+        error: err.message || "The upstream server could not be reached.",
+      });
     }
   });
 
